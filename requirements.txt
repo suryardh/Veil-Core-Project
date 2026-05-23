@@ -1,0 +1,32 @@
+# =============================================================================
+# Veil - Core Dependencies
+# =============================================================================
+
+# --- Environment ---
+# config.py (optional, fallback if missing)
+python-dotenv
+
+# --- LLM Inference ---
+# llm/engine.py
+llama-cpp-python
+
+# --- HTTP / Web Search ---
+# tools/web/search.py
+requests
+urllib3
+
+
+
+# =============================================================================
+# Optional / Future
+# =============================================================================
+
+# --- OCR (vision/ocr.py -- not yet implemented) ---
+# paddlepaddle
+# paddleocr
+
+
+# --- Vector / Semantic Memory (memory/embeddings.py -- future) ---
+# sentence-transformers
+# chromadb
+# faiss-cpu
