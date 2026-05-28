@@ -3,46 +3,6 @@ import time
 import config
 from memory.store import JSONStore
 
-IMPORTANCE_KEYWORDS = {
-    3: [
-        "nama",
-        "nama panggilan",
-        "umur",
-        "tanggal lahir",
-        "ulang tahun",
-        "pekerjaan",
-        "kesukaan",
-        "favorit",
-        "suka",
-        "cinta",
-        "sayang",
-        "alamat",
-        "no hp",
-        "telepon",
-        "email",
-        "status",
-    ],
-    2: [
-        "tidak suka",
-        "ga suka",
-        "benci",
-        "gak suka",
-        "nggak suka",
-        "takut",
-        "trauma",
-        "phobia",
-        "alergi",
-    ],
-}
-
-
-def _compute_importance(text: str) -> int:
-    lower = text.lower()
-    for imp, keywords in IMPORTANCE_KEYWORDS.items():
-        if any(k in lower for k in keywords):
-            return imp
-    return 1
-
 
 class LongTermMemory:
     MAX_FACTS = 500
@@ -54,27 +14,16 @@ class LongTermMemory:
         if self.store.get("facts") is None:
             self.store.set("facts", [])
 
-    def remember(self, category: str, content: str):
-        fact_text = content
-        for prefix in [
-            "ingat kalau ",
-            "ingat bahwa ",
-            "ingat ",
-            "remember that ",
-            "remember ",
-        ]:
-            if fact_text.lower().startswith(prefix):
-                fact_text = fact_text[len(prefix) :]
-                break
-        if fact_text:
-            fact_text = fact_text[0].upper() + fact_text[1:]
+    def remember(self, category: str, content: str, importance: int = 1):
+        if not content:
+            return
         facts = self.store.get("facts", [])
-        if not any(f["content"].lower() == fact_text.lower() for f in facts):
-            importance = _compute_importance(fact_text)
+        if not any(f["content"].lower() == content.lower() for f in facts):
             facts.append(
                 {
+                    "type": category,
                     "category": category,
-                    "content": fact_text,
+                    "content": content,
                     "importance": importance,
                     "timestamp": time.time(),
                 }

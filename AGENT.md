@@ -1,491 +1,392 @@
-# Veil Agent Architecture
+# Veil Architecture
 
 ## Overview
 
-Veil is a **stateful local AI agent runtime** built for:
+Veil is a **personality-centric local AI companion runtime**. It is designed as a persistent character system with emotional continuity.
 
-* orchestration
-* personality injection
-* external memory systems
-* tool execution
-* session state tracking
-* reference resolution
-* local LLM inference
-
-The project focuses on building a scalable AI agent architecture instead of a simple chatbot wrapper.
-
-Veil treats the language model as only one component inside a larger controllable system.
+The project shifted from an agent-framework approach (Phase 4.x) to a character-first architecture (Phase 5). The LLM is treated as a language generation engine; everything else — emotion, memory, cognition, state — is externalized.
 
 ---
 
 # Core Philosophy
 
-Veil follows this principle:
-
-```text
-Keep the model simple.
-Make the system intelligent.
+```
+Character identity > capability
+Capability is invisible
 ```
 
-The LLM is treated as:
+Key principles:
 
-* language generation engine
-* reasoning component
-* conversational layer
-
-Everything else is externalized:
-
-* memory
-* orchestration
-* session state
-* tools
-* routing
-* persistence
-* runtime behavior
-
-This allows:
-
-* controllable behavior
-* model swapping without memory loss
-* lower resource usage
-* easier debugging
-* system-level scalability
-
----
-
-# Why Veil Avoids Heavy AI Frameworks
-
-Veil intentionally avoids heavyweight orchestration frameworks.
-
-Reasons:
-
-* lower runtime overhead
-* easier debugging
-* explicit execution flow
-* fewer hidden abstractions
-* easier experimentation
-* simpler dependency graph
-* more control over prompting and memory
-
-The goal is architecture clarity over framework magic.
+- **Personality is not a wrapper** — it is the main interface
+- **Tools are subconscious** — executed behind the character, never visible
+- **Emotional continuity** — state decays naturally, relationship progresses weighted by emotional depth
+- **No mode switching** — dynamic state modulation replaces rigid mode toggles
+- **No numeric values in prompts** — emotional state mapped to natural language descriptors
 
 ---
 
 # High-Level Architecture
 
-```text
-User
- ↓
-IntentRouter
- ↓
-StateManager
- ├─ SessionState
- └─ resolve_reference()
- ↓
-Orchestrator
- ├─ Tool Execution
- ├─ Formatter Layer
- └─ Prompt Builder
- ↓
-Agent Layer (Stella)
- ↓
-LLM Engine
- ↓
-Response
+```mermaid
+flowchart TB
+    U["User Input"] --> PC["PersonalityCore"]
+
+    subgraph PC["PersonalityCore (coordinator)"]
+        direction TB
+        AN["analyzer\nkeyword → valence/arousal"] --> ST["state\n5-dim relationship + decay"]
+        ST --> EM["emotional\nsalience filter + record"]
+
+        EM --> DEC{"should use\ncognition?"}
+
+        DEC -->|yes| COG["cognition\nsearch → extract → summarize"]
+        DEC -->|no| ROUTE{"tool\nneeded?"}
+
+        ROUTE -->|calculator/datetime| ORCH["orchestrator\nrun_tool → ToolResult"]
+        ROUTE -->|no| NONE[""]
+
+        COG --> PR["prompting\nstate → nat lang"]
+        ORCH --> PR
+        NONE --> PR
+    end
+
+    PR --> AG["Agent.generate(system, input)"]
+    AG --> LLM["LLM Engine\nllama.cpp + Qwen 3B"]
+    LLM --> RES["Response"]
+
+    style AG fill:#f3e5f5
+    style LLM fill:#fce4ec
+    style RES fill:#e8f5e9
+    style COG stroke-dasharray:5 5
 ```
 
 ---
 
 # Core Components
 
-## 1. app.py
+## 1. PersonalityCore (`personality/core.py`)
 
-Application entry point.
+Thin coordinator — the "conscious mind" of the companion.
 
-Responsibilities:
+**Responsibilities:**
+- Run emotion analysis on user input
+- Update relationship state (affection, trust, attachment, comfort, dependency)
+- Apply state decay
+- Record emotional memory (if salience threshold met)
+- Decide whether cognition (tools) is needed
+- Route to cognition or direct tool call
+- Compose final prompt via prompting module
+- Call agent to generate response
 
-* CLI runtime loop
-* logger initialization
-* tool registration
-* graceful shutdown handling
-* exception handling
+**Flow:**
+```python
+class PersonalityCore:
+    def handle(self, user_input: str) -> str:
+        analysis = analyze(user_input)
+        self.state.update_from_interaction(analysis.emotion, analysis.arousal, analysis.confidence)
+        self.state.decay()
+        if analysis.confidence >= 0.4:
+            self.emotional_memory.record(...)
+        if Cognition.can_handle(user_input):
+            cognition_context = self.cognition.process(user_input)
+        else:
+            cognition_context = self._route_tool(user_input)
+        system = build_prompt(identity, state, emotional_summary, user_input, cognition_context)
+        return self.agent.generate(system, user_input)
+```
 
-Architecture notes:
-
-* lightweight entrypoint
-* no orchestration logic
-* test-friendly structure via `main()` guard
-
-Status:
-
-* IMPLEMENTED
+**Status:** IMPLEMENTED
 
 ---
 
-## 2. Orchestrator (`core/orchestrator.py`)
+## 2. State Machine (`personality/state.py`)
 
-Thin coordinator layer (~40 lines). Delegates to IntentRouter + StateManager.
+Two dataclasses: **StellaIdentity** (fixed traits) and **StellaState** (dynamic).
 
-Responsibilities:
+### StellaIdentity (permanent)
+```python
+@dataclass
+class StellaIdentity:
+    humor: float = 0.7
+    warmth: float = 0.8
+    teasing: float = 0.5
+    emotional_openness: float = 0.6
+    protectiveness: float = 0.7
+```
 
-* coordinate intent → tool → format → LLM flow
-* tool execution with `_run_tool()`
-* invoke formatters per tool type
-* pass formatted result to `chat_with_context()`
+### StellaState (per interaction)
+```python
+@dataclass
+class StellaState:
+    affection: float      # 0.0 → 1.0
+    trust: float          # 0.0 → 1.0
+    attachment: float     # 0.0 → 1.0
+    comfort: float        # 0.0 → 1.0
+    dependency: float     # 0.0 → 1.0
+```
 
-Key design:
+### State update rules
+- **Positive** interaction → affection + trust + attachment + comfort + dependency increase
+- **Intimate** interaction → stronger boost (especially attachment + affection)
+- **Negative** interaction → affection - trust - comfort decrease
+- **Confidence < 0.4** → no state update (ambiguity guard)
 
-* no intent logic (delegated to IntentRouter)
-* no state logic (delegated to StateManager)
-* formatters are stateless functions in a dict
+### Decay
+Each dimension decays at a different rate per turn:
+- `affection *= 0.998` — warms up fast, cools slow
+- `trust *= 0.9995` — very slow to erode
+- `comfort *= 0.997` — fades quickest
+- Prevents permanent maxed state
+
+### Stage label (derived, not linear)
+```python
+combined = (affection + trust*0.8 + attachment*0.6 + comfort*0.4 + dependency*0.3) / 3.1
+# < 0.2 = kenalan
+# < 0.4 = akrab
+# < 0.6 = dekat
+# < 0.8 = sayang
+# >= 0.8 = istimewa
+```
+
+### Mood (emergent)
+```python
+dominant_mood() → "warm" | "playful" | "guarded" | "yearning" | "neutral"
+```
+
+Mood is derived from state combination, not set manually.
+
+**Status:** IMPLEMENTED
+
+---
+
+## 3. Emotion Analyzer (`personality/analyzer.py`)
+
+Keyword-based valence/arousal detection. Designed for deterministic, fast, cheap operation on local models.
+
+### Output
+```python
+@dataclass
+class EmotionAnalysis:
+    emotion: str     # "positive" | "negative" | "intimate" | "neutral"
+    valence: float   # -1.0 to 1.0
+    arousal: float   # 0.0 to 1.0
+    confidence: float # 0.0 to 1.0
+```
+
+### Detection method
+- **Lexicon** — regex patterns mapped to emotion + valence + arousal
+- **Negation patterns** — "ga sayang" overrides "sayang" (negative instead of intimate)
+- **Emoji** — ❤, 😊, 😢, etc. with valence mapping
+- **Intensifiers** — `!`, `??`, ALL CAPS boost arousal
+- **Confidence** — proportion of words matched; low confidence → skip state update
+
+### Example outputs
+| Input | Emotion | Valence | Arousal |
+|-------|---------|---------|---------|
+| "hai apa kabar" | neutral | 0.0 | 0.1 |
+| "aku sayang kamu" | intimate | 0.8 | 0.7 |
+| "makasih ya" | positive | 0.6 | 0.3 |
+| "kesel ah" | negative | -0.7 | 0.7 |
+| "kamu ga sayang aku" | negative | -0.05 | 0.7 |
+
+**Status:** IMPLEMENTED
+
+---
+
+## 4. Emotional Memory (`memory/emotional.py`)
+
+Stores interactions with emotional weight. Separate from factual long-term memory.
+
+### Schema
+```python
+@dataclass
+class EmotionalRecord:
+    type: str        # "interaction" | "compliment" | "conflict" | ...
+    content: str
+    valence: float
+    arousal: float
+    timestamp: float
+    recurrence: int
+```
+
+### Salience filter
+Only records where `abs(valence) * arousal >= 0.35` are stored. Prevents memory pollution from low-emotion chit-chat.
+
+### Recurrence merging
+If the same content appears within 1 hour, recurrence counter increments instead of creating a duplicate.
+
+### Recall
+- `recall_recent(n=5)` — most recent emotional records
+- `recall_by_valence(min_valence)` — filter by emotional tone
+- `emotional_summary()` — formatted for prompt injection
+
+**Status:** IMPLEMENTED
+
+---
+
+## 5. Cognition (`core/cognition.py`)
+
+Invisible search→extract→summarize subsystem. Replaces the old Planner with a much simpler design.
+
+**What it does:**
+- Triggered by keywords (rangkum, cari, jelaskan, search, etc.)
+- Runs `web_search` → optionally `web_extract` → returns synthesized text
+- Returns `str | None` — no DAG, no JSON, no ToolContext exposure
+
+**What it does NOT do:**
+- No visible execution traces
+- No dependency graph
+- No parallel levels
+- No JSON planning
+- No step enumeration
+
+Cognition is called by PersonalityCore when the decision is made that factual information is needed. The result is injected into the prompt as "Relevant factual context:" — the LLM sees it as natural knowledge, not tool output.
+
+**Status:** IMPLEMENTED
+
+---
+
+## 6. Orchestrator (`core/orchestrator.py`)
+
+Pure infrastructure boundary. No personality, no cognition, no routing logic.
 
 ```python
 class Orchestrator:
-    def __init__(self, agent, tools_registry=None):
-        self.agent = agent
-        self.tools = tools_registry or {}
-        self.intent = IntentRouter()
-        self.state = StateManager()
+    def register_tool(self, name: str, func)
+    def run_tool(self, name: str, input_: str = "") -> ToolResult
 ```
 
-Status:
+Methods return `ToolResult` directly. No formatting, no `chat_with_context`, no state recording. The Orchestrator is the stable backend API for future integrations (Discord, Web UI, TTS, etc.).
 
-* IMPLEMENTED
-
----
-
-## 3. IntentRouter (`core/intent_router.py`)
-
-Rule-based intent detection, extracted from the old monolithic Orchestrator.
-
-Detected intents:
-
-| Intent | Trigger keywords |
-|--------|-----------------|
-| `web_search` | search, cari, browse, google, ddg |
-| `datetime` | jam berapa, tanggal berapa, hari ini, what time |
-| `calculator` | math expressions, hitung, sqrt, persen |
-| `memory_write` | startswith "ingat ", "ingatkan ", "remember " |
-| `chat` | fallback (no intent matched) |
-
-Architecture:
-
-* pure function, no state
-* easily testable in isolation
-* regex patterns in `CALC_PATTERNS`
-
-Status:
-
-* IMPLEMENTED
+**Status:** IMPLEMENTED
 
 ---
 
-## 4. StateManager + SessionState (`core/state_manager.py`)
+## 7. Agent Layer (`core/agent.py`)
 
-Cross-turn conversation state for reference resolution and tool chaining.
+Prompt assembly and LLM interaction layer.
 
-### SessionState
+**Responsibilities:**
+- Build prompt in Qwen Instruct format (`<|im_start|>`)
+- Format history as chat-template blocks
+- Context budgeting (system: 2k, history: 1.5k, response: 800)
+- Sanitize model output (regex + split on first `<|im_end|>`)
+- Update short-term memory
+
+**Key methods:**
+- `generate(system: str, user_input: str) → str` — takes fully composed system prompt, generates response
+- `chat_stream(user_input: str)` — streaming with token yield
+
+**Removed from agent:**
+- `chat_with_context()` — replaced by `generate()`
+- `ToolContext` injection — moved to PersonalityCore + Cognition
+- `mode` parameter — replaced by dynamic state
+- `_build_raw_metadata()` — no longer needed
+
+**Status:** IMPLEMENTED
+
+---
+
+## 8. Personality Identity (`personality/stella.py`)
+
+Module-level constants only. No class, no `build_prompt()`.
 
 ```python
-@dataclass
-class SessionState:
-    last_search_results: list[dict]
-    last_tool: str | None
-    active_topic: str | None
-    tool_history: list[dict]
+BASE_IDENTITY      — "You are Stella, a human-like AI companion..."
+LANGUAGE_RULES     — Indonesian-first, casual internet style
+BEHAVIOR_RULES     — Natural flow, adaptive tone, NSFW allowed, no AI mention
 ```
 
-### Reference Resolution
+Used as reference by `prompting.py` when composing the final prompt with dynamic state context.
 
-`resolve_reference()` detects Indonesian references to prior search results:
-
-| Input | Resolves to |
-|-------|------------|
-| `nomor 2` | `last_search_results[1]` |
-| `yang pertama` | `last_search_results[0]` |
-| `buka link ketiga` | `last_search_results[2]` |
-| `no 3` | `last_search_results[2]` |
-| `#1` | `last_search_results[0]` |
-
-When a reference is resolved, Orchestrator auto-triggers `web_extract` on the URL.
-
-Status:
-
-* IMPLEMENTED
+**Status:** IMPLEMENTED
 
 ---
 
-## 5. Agent Layer (`core/agent.py`)
+## 9. Prompt Composition (`personality/prompting.py`)
 
-Prompt assembly and response coordination layer.
+Builds the final system prompt from components:
 
-Responsibilities:
-
-* build prompts
-* inject memory
-* inject tool results
-* sanitize model output
-* update memory systems
-
-Key methods:
-
-* `_build_prompt()`
-* `_clean_response()`
-* `chat_with_context()`
-* `chat_stream()`
-
-Important behaviors:
-
-* removes hallucinated `Stella:` prefixes
-* shared prompt builder eliminates duplicated logic
-* streaming saves memory only after completion
-
-Architecture philosophy:
-
-* agent layer handles orchestration-facing behavior
-* raw inference stays isolated in `llm/engine.py`
-
-Status:
-
-* IMPLEMENTED
-
----
-
-## 6. Personality System (`personality/`)
-
-Stella is the default personality runtime.
-
-Responsibilities:
-
-* identity shaping
-* tone control
-* language rules
-* behavioral boundaries
-* mode switching
-
-Implemented modes:
-
-* casual
-* serious
-* flirty
-* dark
-* roleplay
-
-Design philosophy:
-
-* personality is externalized from the model
-* prompt layering instead of model fine-tuning
-* lightweight enough for small GGUF models
-
-Key behavior:
-
-* Indonesian-first responses
-* casual internet-native language
-* natural conversation flow
-* no robotic assistant tone
-
-Status:
-
-* IMPLEMENTED
-
----
-
-## 7. LLM Engine (`llm/engine.py`)
-
-Low-level inference wrapper around llama.cpp.
-
-Responsibilities:
-
-* raw inference
-* token streaming
-* parameter management
-* output sanitization
-
-Features:
-
-* streaming generation
-* configurable sampling
-* repetition control
-* stop token management
-
-Key parameters:
-
-* `top_p = 0.95`
-* `repeat_penalty = 1.1`
-
-Important architecture rule:
-
-* no memory logic
-* no orchestration logic
-* no personality logic
-
-LLM engine should remain inference-only.
-
-Status:
-
-* IMPLEMENTED
-
----
-
-## 8. Prompt Utilities (`llm/prompt.py`)
-
-Shared utilities for prompt safety and formatting.
-
-Responsibilities:
-
-* sanitize external content
-* format memory context
-* inject tool outputs
-* truncate oversized context
-
-Key protections:
-
-* escapes `User:` and `Stella:` inside external content
-* prevents simple role confusion injection
-* character-budget context trimming
-
-Important philosophy:
-
-* prompt injection resistance starts before inference
-* external tool output should never be trusted directly
-
-Status:
-
-* IMPLEMENTED
-
----
-
-# Memory System
-
-Veil does not rely on model-side memory.
-
-Memory is:
-
-* externalized
-* structured
-* retrievable
-* persistent
-* controllable
-
-This allows:
-
-* persistence across sessions
-* model swapping without memory loss
-* better scalability
-* memory inspection/debugging
-* controllable retrieval
-
----
-
-## 9. Short-Term Memory (`memory/short_term.py`)
-
-Recent conversational context system.
-
-Features:
-
-* configurable history limit
-* context budget trimming (4000 chars)
-* useless-message filtering (< 30 tokens)
-* long-message truncation (> 500 chars)
-
-Key protections:
-
-* ignores low-value messages (`wkwk`, `iya`, `lol`, etc.)
-* prevents prompt flooding from huge pasted text
-* drops oldest context first when exceeding limits
-
-Status:
-
-* IMPLEMENTED
-
----
-
-## 10. Long-Term Memory (`memory/long_term.py`)
-
-Persistent fact storage system.
-
-Storage format:
-
-```json
-{
-  "category": "fact",
-  "content": "User likes coding",
-  "importance": 3,
-  "timestamp": 1712345678.9
-}
+```python
+def build_prompt(identity_blob, state, emotional_context, user_input, cognition_context) -> str
 ```
 
-Features:
+- **`describe_state(state)`** — state → natural language (no numeric values)
+  - `"Stella feels warm and affectionate right now. You are at the 'sayang' stage."`
+- **Mood descriptors** — maps `dominant_mood()` to a natural sentence
+- **Cognition injection** — "Relevant factual context:" block (only if tools were used)
+- **Emotional context** — "Recent emotional context:" block with summary
 
-* JSON-backed persistence
-* timestamped memories
-* importance scoring (1-3)
-* deduplication
-* retrieval filtering
-* capped storage (500 facts, injects 10)
+Max 3-5 dynamic variables injected to prevent prompt drift on Qwen 3B.
 
-Memory ranking:
-
-* importance DESC
-* recency DESC
-
-Architecture philosophy:
-
-* small curated memory > giant unfiltered memory dump
-
-Status:
-
-* IMPLEMENTED
+**Status:** IMPLEMENTED
 
 ---
 
-## 11. JSON Store (`memory/store.py`)
+## 10. Memory Extractor (`memory/extractor.py`)
 
-Persistent storage layer.
+Structured fact extraction from natural language before storage.
 
-Features:
-
-* atomic save system
-* autosave toggle
-* batch operation support
-* crash-safe writes
-
-Implementation:
-
-```text
-write temp file
-→ flush
-→ os.replace()
+### `extract_fact(text)`
+```python
+>>> extract_fact("tolong ingat kalau aku suka kopi")
+{"type": "preference", "content": "Aku suka kopi", "importance": 3, "tags": ["preference"]}
 ```
 
-Benefits:
+### Classification
+| Type | Keywords |
+|------|----------|
+| `personal_info` | nama, umur, alamat, name, age |
+| `preference` | suka, cinta, favorit, like, love |
+| `reminder` | besok, meeting, jam, remind |
+| `general` | fallback |
 
-* zero corrupted JSON risk on crashes
-* safer persistence behavior
+### Importance scoring
+| Level | Criteria |
+|-------|----------|
+| 4 | Personal info (nama, umur, alamat) |
+| 3 | Preferences (suka, cinta, favorite) |
+| 2 | Reminders + dispreferences |
+| 1 | General + short statements |
 
-Status:
+**Status:** IMPLEMENTED
 
-* IMPLEMENTED
+---
+
+## 11. Long-Term Memory (`memory/long_term.py`)
+
+Persistent JSON-backed fact storage.
+
+Features:
+- timestamped memories
+- importance scoring (1–4, from extractor)
+- deduplication
+- capped at 500 facts, injects max 10
+- sorted by importance + recency
+- explicit `importance` parameter
+
+**Status:** IMPLEMENTED
+
+---
+
+## 12. Short-Term Memory (`memory/short_term.py`)
+
+Recent conversation history management.
+
+Features:
+- 4k character budget
+- Ignores low-value messages (< 30 chars, no alpha chars, generic greetings after first)
+- Truncates long messages (> 500 chars)
+- Chat-template format output
+
+**Status:** IMPLEMENTED
 
 ---
 
 # Tool System
 
-Veil uses external tools instead of relying entirely on model hallucination.
+## 13. BaseTool + ToolResult + ToolContext + ToolRegistry (`tools/base.py`)
 
-Architecture goals:
-
-* deterministic operations
-* reusable execution layer
-* modular extensibility
-* safe execution boundaries
-
-All tools return a normalized `ToolResult` dataclass.
-
----
-
-## 12. BaseTool + ToolResult (`tools/base.py`)
-
+### ToolResult
 ```python
 @dataclass
 class ToolResult:
@@ -501,341 +402,173 @@ class ToolResult:
     def fail(cls, error, source="") -> ToolResult: ...
 ```
 
+### ToolContext (internal only)
 ```python
-class BaseTool(ABC):
-    @abstractmethod
-    def execute(self, *args, **kwargs) -> ToolResult: ...
+@dataclass
+class ToolContext:
+    tool: str
+    formatted: str
+    raw: Any = None
+    success: bool = True
+    source: str = ""
+    error: str | None = None
+
+    @classmethod
+    def from_result(cls, tool, result, *, label="") -> ToolContext: ...
+    @classmethod
+    def from_error(cls, tool, error, *, label="") -> ToolContext: ...
 ```
 
-Benefits:
-
-* uniform return type across all tools
-* no mixed `str | dict` returns
-* clear success/failure semantics
-* formatters access `result.data`, `result.error`, `result.source`
-* future-proof for async, TTS, Discord, Web UI renderers
-
-Status:
-
-* IMPLEMENTED
-
----
-
-## 13. WebSearchTool (`tools/web/search.py`)
-
-Tavily REST API (primary and only backend).
-
-Architecture:
-
-* `POST /search` with Bearer auth
-* `search_depth="basic"`, `max_results=5`
-* MD5 query caching with TTL (3600s)
-* Returns `ToolResult.ok({"query": ..., "results": [...]})`
-
-Previous DDG scraper was removed due to ISP blocking + anti-bot JS challenges.
-
-Cache:
-
-* `_CachedMixin` — shared TTL cache mixin
-* evicts oldest entry (not `clear()`)
-* configurable `WEB_SEARCH_CACHE_SIZE = 32`
-
-Setup:
-
-```bash
-# No additional package needed — calls REST directly via `requests`
-# Get key at https://tavily.com
-TAVILY_API_KEY=tvly-...
-```
-
-Status:
-
-* IMPLEMENTED
-
----
-
-## 14. WebExtractTool (`tools/web/search.py`)
-
-Scrape URL content via Tavily `/extract` endpoint.
-
-Architecture:
-
-* `POST /extract` with Bearer auth
-* `extract_depth="basic"`, `format="markdown"`
-* Returns `ToolResult.ok({"urls": [...], "results": [...], "failed_results": [...]})`
-* Cached per unique URL set with TTL
-
-This is the foundation for RAG pipeline (search → extract → LLM summarize).
-
-Status:
-
-* IMPLEMENTED
-
----
-
-## 15. TavilyUsageTool (`tools/web/search.py`)
-
-Check Tavily API quota and account details.
-
-Architecture:
-
-* `GET /usage` with Bearer auth
-* Returns `ToolResult.ok({"raw": {...}})`
-* Shows plan, key usage, per-endpoint breakdown, PayGo
-
-Status:
-
-* IMPLEMENTED
-
----
-
-## 16. CalculatorTool (`tools/system/calculator.py`)
-
-Safe deterministic calculator.
-
-Features:
-
-* restricted eval
-* math function whitelist (`sqrt`, `sin`, `cos`, `tan`, `log`, etc.)
-* percentage parsing ("15% of 200", "15 persen dari 200")
-* injection blocking
-* numeric validation
-
-Blocked patterns:
-
-* `import`
-* `eval`
-* `lambda`
-* `__`
-* `{}` / `[]`
-
-Architecture philosophy:
-
-* deterministic operations should not use the LLM
-
-Status:
-
-* IMPLEMENTED
-
----
-
-## 17. DateTimeTool (`tools/system/datetime.py`)
-
-Local time retrieval tool.
-
-Features:
-
-* WIB timezone (UTC+7)
-* Indonesian localization (Senin, Selasa, ..., Januari, ..., etc.)
-* dependency-free timezone handling
-
-Implementation:
-
+### ToolRegistry
 ```python
-datetime.now(timezone(timedelta(hours=7)))
+class ToolRegistry:
+    def register(self, tool: BaseTool)
+    def describe_for_planner(self) -> str  # dynamic tool descriptions
 ```
 
-Status:
+**Status:** IMPLEMENTED
 
-* IMPLEMENTED
+## 14-17. Web Tools (`tools/web/search.py`)
+
+- `WebSearchTool` — Tavily `/search`, Bearer auth, TTL cache, retry wrapper
+- `WebExtractTool` — Tavily `/extract`, URL content extraction
+- `TavilyUsageTool` — Tavily `/usage`, quota check
+
+All use `_CachedMixin` (TTL 3600s) and `with_retry()` (1 retry, 1s backoff).
+
+**Status:** IMPLEMENTED
+
+## 18. CalculatorTool (`tools/system/calculator.py`)
+
+Safe eval: restricted globals, math function whitelist, percentage parsing, injection blocking.
+
+## 19. DateTimeTool (`tools/system/datetime.py`)
+
+WIB (UTC+7), Indonesian locale (Senin, Selasa, ..., Januari, ...).
 
 ---
 
 # Execution Flow
 
-```text
-1. User sends message
+```mermaid
+flowchart LR
+    USER["User"] --> PC["PersonalityCore.handle()"]
 
-2. Reference resolver checks input
-   → "nomor 2" detected?
-   → yes → auto-trigger web_extract(URL)
+    PC --> A["analyze()\n→ EmotionAnalysis"]
+    A --> B["state.update()\n+ decay()"]
+    B --> C{"salience\n>= 0.35?"}
+    C -->|yes| D["emotional.record()"]
+    C -->|no| E{"cognition\nneeded?"}
+    D --> E
 
-3. Intent detection runs
-   → IntentRouter.detect()
+    E -->|yes| F["cognition.process()\ninvisible search→extract"]
+    E -->|no| G{"tool\nneeded?"}
+    G -->|calc/dt| H["orch.run_tool()"]
+    G -->|no| I[""]
+    F --> J["build_prompt()"]
+    H --> J
+    I --> J
 
-4. Tool routing (if needed)
-   → tool.execute()
-   → try/except
-   → ToolResult
+    J --> K["Agent.generate()"]
+    K --> L["LLM inference"]
+    L --> M["_clean_response()"]
+    M --> N["short_memory.add()"]
+    N --> O["Response"]
 
-5. Session recording
-   → StateManager.record(tool, query, result)
-
-6. Formatter renders ToolResult → string
-
-7. Memory retrieval
-   → short-term memory
-   → long-term memory
-
-8. Prompt assembly
-   → personality
-   → memory
-   → tool context
-   → user message
-
-9. LLM inference
-   → stream or blocking
-
-10. Response sanitization
-
-11. Memory update
+    style F stroke-dasharray:5 5,fill:#fff3e0
+    style L fill:#fce4ec
+    style O fill:#e8f5e9
 ```
 
 ---
 
-# Prompt Injection Philosophy
+# Key Differences from Phase 4.x
 
-Veil assumes external content is unsafe by default.
-
-Protections currently implemented:
-
-* role escaping
-* prompt sanitization
-* tool result wrapping
-* restricted tool execution
-* isolated orchestration flow
-
-Current limitations:
-
-* no true sandboxing
-* no semantic injection detection
-* no adversarial filtering yet
-
----
-
-# Security / Safety Notes
-
-Current protections:
-
-* calculator blocks dangerous patterns
-* prompt sanitization reduces role confusion
-* atomic persistence prevents corruption
-* tool exceptions are isolated
-
-Known risks:
-
-* prompt injection resistance is basic
-* tools are not sandboxed
-* model hallucination still possible
-
----
-
-# Performance Philosophy
-
-Veil prioritizes:
-
-* efficient orchestration
-* lightweight runtime
-* smaller local models
-* explicit system design
-
-Core idea:
-
-```text
-Better orchestration + smaller models
-can outperform
-larger models with weak system design.
-```
+| Aspect | Phase 4.x (Agent Framework) | Phase 5 (Companion) |
+|--------|----------------------------|---------------------|
+| Entry point | `Orchestrator.handle()` | `PersonalityCore.handle()` |
+| Tool routing | IntentRouter (regex) | Analyzer + Cognition |
+| Planner | DAG, JSON planning, parallel | Invisible cognition |
+| Modes | casual / flirty / dark / ... | Dynamic state modulation |
+| Emotional model | None (factual only) | Valence/arousal + relationship state |
+| Tool visibility | `=== Planner execution ===` | Never visible |
+| Orchestrator role | Coordinator + personality | Pure infra boundary |
+| State management | SessionState + ref resolution | Relationship state + emotional memory |
+| Test count | 30 | 38 |
 
 ---
 
 # Development Roadmap
 
-## Phase 1 — Raw LLM Chat
-- local inference
-- basic prompting
-- CLI chat
+## Phase 5 (Current) — Personality-Centric Rewrite
+- [x] Emotion analyzer (keyword → valence/arousal)
+- [x] State machine (identity + relationship dynamics)
+- [x] Emotional memory (salience filter, recurrence)
+- [x] Cognition (invisible search→extract→summarize)
+- [x] Prompt composer (state → natural language)
+- [x] PersonalityCore coordinator
+- [x] Orchestrator as pure infra boundary
+- [x] Remove IntentRouter, Planner, StateManager
 
-## Phase 2 — Tool-Enabled Chatbot
-- web search (DDG scraper — later removed)
-- calculator
-- datetime
-- regex intent routing
+## Phase 6 — Emotional Depth
+- Relationship drift detection
+- Conflict/reconciliation dynamics
+- Long-term emotional arcs (attachment styles)
+- User preference learning
 
-## Phase 3 — Memory + Personality
-- short-term memory (4k budget)
-- long-term memory (JSON, importance)
-- Stella personality system
-- structured prompt injection
+## Phase 7 — Multi-Platform
+- Discord integration
+- TTS voice
+- Web UI
+- Mobile app
 
-## Phase 4 — Stateful Tool Agent
-- IntentRouter + StateManager split
-- SessionState + reference resolver
-- Tavily REST (DDG removed)
-- ToolResult dataclass
-- Formatter layer
-- TTL caching (_CachedMixin)
-
-## Phase 5 — Planner (NEXT)
-- multi-tool chains
-- execution graph
-- search → extract → summarize pipeline
-
-## Phase 6 — Semantic Memory
-- embeddings
-- vector retrieval
-- context similarity
-
-## Phase 7 — Autonomous Loop
-- plan → act → observe → reflect
-- agent self-improvement
-- async runtime
+## Phase 8 — Memory Evolution
+- Semantic memory (embeddings)
+- Emotional→factual memory cross-reference
+- Dream/consolidation cycles
 
 ---
 
 # Current State
 
 ## Complete
-
-* local LLM inference with streaming
-* Stella personality runtime (5 modes)
-* short-term memory (4k budget, ignore/truncate rules)
-* long-term memory (JSON, importance scoring, dedup, 500 facts)
-* atomic persistence (tempfile + os.replace)
-* IntentRouter (regex-based, testable in isolation)
-* StateManager + SessionState (cross-turn reference resolution)
-* Thin orchestrator coordinator
-* ToolResult dataclass (uniform tool returns)
-* Tavily REST integration (search, extract, usage)
-* TTL caching (_CachedMixin, evict oldest)
-* Formatter layer per tool
-* Structured logging
-* Automated testing (30 assertions)
+- Local LLM inference with streaming
+- Stella identity (Indonesian-first companion)
+- Emotion analysis (4 emotions, valence/arousal)
+- Relationship state (5 dimensions, decay, stage label)
+- Mood modulation (5 moods, emergent)
+- Emotional memory (salience filter, recurrence merging)
+- Short-term memory (4k budget, ignore/truncate)
+- Long-term memory (JSON, importance, dedup)
+- Fact extraction (type, importance, framing strip)
+- Cognition (invisible search→extract→summarize)
+- Orchestrator (pure infra boundary)
+- ToolContext + ToolResult + ToolRegistry
+- Web search (Tavily, TTL cache, retry)
+- Calculator + Datetime tools
+- Prompt composition (state → natural language)
+- Agent layer (Qwen format, context budgeting, response cleanup)
+- Automated testing (38 assertions)
 
 ## In Progress
-
-* Planner system (multi-tool chains)
-* Chat template (Qwen Instruct format)
-* Semantic memory (embeddings + vector retrieval)
-* Async tool execution
+- Emotional depth (arcs, attachment, conflict)
+- Multi-platform (Discord, TTS)
+- Semantic memory
 
 ---
 
 # Recommended Model
 
-Recommended:
+**Qwen2.5-3B-Instruct GGUF (Q4_K_M)**
 
-* Qwen2.5-3B-Instruct GGUF (Q4_K_M)
-
-Inference backend:
-
-* llama.cpp
-* llama-cpp-python
+Inference backend: llama.cpp + llama-cpp-python
 
 ---
 
 # Final Notes
 
-Veil is a research-oriented modular local AI runtime.
+Veil is a research-oriented modular local AI companion runtime.
 
-Behavior quality depends heavily on:
+The shift from agent-framework to character-first architecture reflects the understanding that **for companion AI, identity is more important than capability**. Capability exists to serve the character, not the other way around.
 
-* orchestration quality
-* memory structure
-* prompt design
-* retrieval quality
-* model alignment
-
-The long-term goal is not to create a chatbot.
-
-The goal is to build a controllable local AI agent system.
+The long-term goal is a persistent emotional entity that lives locally, respects privacy, and evolves naturally through interaction.

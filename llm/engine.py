@@ -1,5 +1,13 @@
+import re
+
 from llama_cpp import Llama
 import config
+
+CLEANUP_PATTERNS = [
+    (re.compile(r"<\|im_start\|>\s*(?:assistant|user|system)?", re.I), ""),
+    (re.compile(r"<\|im_end\|>"), ""),
+    (re.compile(r"^\s*(?:assistant|user|system)\s*", re.I), ""),
+]
 
 
 class LLMEngine:
@@ -23,14 +31,24 @@ class LLMEngine:
 
     @staticmethod
     def _sanitize(text):
-        for prefix in ["Stella:", "User:", "stella:", "user:"]:
-            if text.startswith(prefix):
-                text = text[len(prefix):].strip()
-        return text
+        text = text.strip()
+        if "<|im_end|>" in text:
+            text = text.split("<|im_end|>")[0]
+        for pattern, replacement in CLEANUP_PATTERNS:
+            text = pattern.sub(replacement, text)
+        return text.strip()
+
+    @staticmethod
+    def _sanitize_token(token):
+        return token.replace("<|im_start|>", "").replace("<|im_end|>", "")
 
     def stream(self, prompt, **kwargs):
         params = self._default_params(max_tokens=config.MAX_TOKENS_STREAM, stream=True, **kwargs)
-        return self.model(prompt, **params)
+        for chunk in self.model(prompt, **params):
+            token = chunk["choices"][0]["text"]
+            cleaned = self._sanitize_token(token)
+            if cleaned:
+                yield cleaned
 
     def generate(self, prompt, **kwargs):
         params = self._default_params(stream=False, **kwargs)

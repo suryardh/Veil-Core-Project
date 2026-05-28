@@ -3,6 +3,11 @@ import time
 import config
 from core.agent import VeilAgent
 from core.orchestrator import Orchestrator
+from personality.core import PersonalityCore
+from personality.analyzer import analyze
+from personality.state import StellaState
+from memory.emotional import EmotionalMemory
+from memory.extractor import extract_fact
 from memory.long_term import LongTermMemory
 from memory.short_term import ShortTermMemory
 from tools.web.search import WebSearchTool
@@ -74,14 +79,14 @@ ltm.remember("hobi", "saya suka coding")
 data2 = ltm.store.get("facts", [])
 test("no duplicate stored", len(data2) == len(data))
 
-ltm.remember("pribadi", "nama panggilan saya Rei")
+fact = extract_fact("nama panggilan saya Rei")
+ltm.remember(fact["type"], fact["content"], importance=fact["importance"])
 data3 = ltm.store.get("facts", [])
 test("new fact stored", any("Rei" in f["content"] for f in data3))
 for f in data3:
     if "Rei" in f["content"]:
-        test("importance 3 for personal facts", f.get("importance") == 3, f"got {f.get('importance')}")
+        test("importance 4 for personal facts", f.get("importance") == 4, f"got {f.get('importance')}")
 
-# Cleanup test file
 import os
 os.remove("logs/test_long_term.json")
 
@@ -102,38 +107,83 @@ test("ignore useless messages", not any("wkwk" in m["content"] for m in stm.hist
 stm.add_message("user", "a" * 1000)
 test("truncate long messages", all(len(m["content"]) <= 503 for m in stm.history))
 
-# ── 4. ORCHESTRATOR INTENT TESTS ─────────────────────────────
+# ── 4. EMOTIONAL + PERSONALITY TESTS (deterministic) ─────────
 
-print("\n--- Intent Detection ---")
-orch_no_model = Orchestrator(agent=None)
-test("detects calculator",  orch_no_model.detect_intent("hitung 2+2") == "calculator")
-test("detects datetime",    orch_no_model.detect_intent("jam berapa") == "datetime")
-test("detects web search",  orch_no_model.detect_intent("cari berita") == "web_search")
-test("detects memory write",orch_no_model.detect_intent("ingat kalau aku suka kopi") == "memory_write")
-test("chat fallback",       orch_no_model.detect_intent("apa kabar") == "chat")
-test("no false positive: berapa kabar", orch_no_model.detect_intent("berapa kabar") == "chat")
-test("no false positive: berapa lama",  orch_no_model.detect_intent("berapa lama") != "calculator")
+print("\n--- Emotional Analysis ---")
+r = analyze("aku sayang kamu")
+test("intimate emotion", r.emotion == "intimate" and r.valence > 0)
+
+r = analyze("kesel ah")
+test("negative emotion", r.emotion == "negative" and r.valence < 0)
+
+r = analyze("makasih")
+test("positive emotion", r.emotion == "positive" and r.valence > 0)
+
+r = analyze("")
+test("empty returns neutral", r.emotion == "neutral")
+
+print("\n--- State Management ---")
+s = StellaState()
+test("default stage kenalan", s.stage_label() == "kenalan")
+test("default mood neutral", s.dominant_mood() == "neutral")
+
+s.update_from_interaction("positive", 0.8, 0.9)
+test("affection increased", s.affection > 0)
+
+s.update_from_interaction("negative", 0.9, 0.9)
+test("trust decreased", s.trust < 0.33)
+
+s.decay()
+test("decay reduces affection", s.affection <= 0.04)
+
+s2 = StellaState()
+s2.update_from_interaction("intimate", 1.0, 0.95)
+test("intimate boosts stage", s2.stage_label() != "kenalan")
+
+print("\n--- Emotional Memory ---")
+em = EmotionalMemory(filepath="logs/test_emotional.json")
+em.record("interaction", "halo", 0.1, 0.1)
+test("salience filter", len(em.records) == 0)
+
+em.record("interaction", "aku sayang kamu", 0.8, 0.8)
+test("record stored", len(em.records) == 1)
+
+em.record("interaction", "aku sayang kamu", 0.8, 0.8)
+test("recurrence merged", len(em.records) == 1 and em.records[0]["recurrence"] == 2)
+
+summary = em.emotional_summary()
+test("summary is string", isinstance(summary, str))
+em.clear()
+os.remove("logs/test_emotional.json")
+
+print("\n--- Orchestrator ---")
+orch = Orchestrator()
+orch.register_tool("calculator", CalculatorTool())
+orch.register_tool("datetime", DateTimeTool())
+
+r = orch.run_tool("calculator", "2 + 2")
+test("calculator via orch", r.success and "4" in r.data.get("result", ""))
 
 # ── 5. (OPTIONAL) LLM-DEPENDENT TESTS ─────────────────────────
 
 print("\n--- LLM-dependent tests (model required) ---")
 try:
     agent = VeilAgent(config.MODEL_PATH)
-    orch = Orchestrator(agent)
+    orch = Orchestrator()
     orch.register_tool("web_search", WebSearchTool())
     orch.register_tool("calculator", CalculatorTool())
     orch.register_tool("datetime", DateTimeTool())
+    core = PersonalityCore(agent, orch)
 
     t0 = time.time()
-    r = orch.handle("Halo")
+    r = core.handle("Halo")
     lat = time.time() - t0
     test("chat responds", len(r) > 0, f"response len: {len(r)}")
     print(f"  Latency: {lat:.2f}s  Preview: {r[:60]}...")
 
-    r = orch.handle("calculate 12 * 12")
+    r = core.handle("12 * 12")
     test("calculator via orch", "144" in r, f"got: {r}")
 
-    # Streaming structural check
     gen = agent.chat_stream("Halo")
     first = next(gen, None)
     test("stream yields tokens", first is not None)
@@ -141,6 +191,8 @@ try:
         pass
 
 except Exception as e:
+    import traceback
+    traceback.print_exc()
     test("LLM-dependent tests", False, f"Model error: {e}")
 
 # ── SUMMARY ──────────────────────────────────────────────────

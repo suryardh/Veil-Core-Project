@@ -5,6 +5,7 @@ import requests
 
 import config
 from tools.base import BaseTool, ToolResult
+from utils.async_utils import with_retry
 
 TAVILY_API_BASE = "https://api.tavily.com"
 CACHE_TTL = 3600
@@ -136,7 +137,7 @@ class WebSearchTool(BaseTool, _CachedMixin):
             return ToolResult.ok(cached, "tavily")
 
         try:
-            results = _search(query)
+            results = with_retry(_search, query, max_retries=1, backoff=1.0)
             self._set_cache(cache_key, {"query": query, "results": results})
             return ToolResult.ok({"query": query, "results": results}, "tavily")
         except Exception:
@@ -175,7 +176,7 @@ class WebExtractTool(BaseTool, _CachedMixin):
             return ToolResult.ok(cached, "tavily")
 
         try:
-            raw = extract_urls(urls, extract_depth="basic", format="markdown")
+            raw = with_retry(extract_urls, urls, extract_depth="basic", format="markdown", max_retries=1, backoff=1.0)
             data = {
                 "urls": urls,
                 "results": raw.get("results", []),

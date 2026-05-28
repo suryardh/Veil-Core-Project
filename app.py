@@ -2,6 +2,7 @@ import sys
 import config
 from core.agent import VeilAgent
 from core.orchestrator import Orchestrator
+from personality.core import PersonalityCore
 from tools.web.search import WebSearchTool, WebExtractTool, TavilyUsageTool
 from tools.system.datetime import DateTimeTool
 from tools.system.calculator import CalculatorTool
@@ -15,7 +16,7 @@ def build_agent():
     return VeilAgent(config.MODEL_PATH)
 
 
-def register_tools(orch):
+def register_tools(orch: Orchestrator):
     orch.register_tool("web_search", WebSearchTool())
     orch.register_tool("web_extract", WebExtractTool())
     orch.register_tool("tavily_usage", TavilyUsageTool())
@@ -25,8 +26,9 @@ def register_tools(orch):
 
 def main():
     agent = build_agent()
-    orch = Orchestrator(agent)
+    orch = Orchestrator()
     register_tools(orch)
+    core = PersonalityCore(agent, orch)
 
     log.info("Veil online.")
 
@@ -35,7 +37,7 @@ def main():
             user = input("You: ")
             if user.lower() in ("exit", "quit"):
                 break
-            response = orch.handle(user)
+            response = core.handle(user)
             print(f"Stella: {response}\n")
     except KeyboardInterrupt:
         print()
