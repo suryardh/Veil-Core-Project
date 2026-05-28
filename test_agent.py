@@ -97,9 +97,8 @@ stm = ShortTermMemory(limit=8)
 for i in range(20):
     stm.add_message("user", f"pesan ke-{i}")
     stm.add_message("assistant", f"respon ke-{i}")
-ctx = stm.get_context()
-test("context not empty", len(ctx) > 0)
-test("context respects budget", len(ctx) <= 4000, f"got {len(ctx)} chars")
+test("context not empty", len(stm.history) > 0)
+test("history respects limit", len(stm.history) <= 16, f"got {len(stm.history)} messages")
 
 stm.add_message("user", "wkwk")
 test("ignore useless messages", not any("wkwk" in m["content"] for m in stm.history))

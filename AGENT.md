@@ -86,12 +86,19 @@ class PersonalityCore:
         self.state.decay()
         if analysis.confidence >= 0.4:
             self.emotional_memory.record(...)
-        if Cognition.can_handle(user_input):
-            cognition_context = self.cognition.process(user_input)
+        self._update_baseline_mood()
+        self._update_emotional_mode(analysis)
+        rhythm = compute_rhythm(self.state, analysis)
+        # Tool routing BEFORE cognition — calculator et al take priority
+        if is_emotional: pass
         else:
-            cognition_context = self._route_tool(user_input)
-        system = build_prompt(identity, state, emotional_summary, user_input, cognition_context)
-        return self.agent.generate(system, user_input)
+            tool_result = self._route_tool(user_input)
+            if tool_result:
+                ctx = tool_result
+            elif Cognition.can_handle(user_input):
+                ctx = self.cognition.process(user_input)
+        system = build_prompt(identity, state, emotional_summary, inactivity_ctx, rhythm)
+        return self.agent.generate(system, user_input, ctx)
 ```
 
 **Status:** IMPLEMENTED
@@ -118,10 +125,13 @@ class StellaIdentity:
 @dataclass
 class StellaState:
     affection: float      # 0.0 → 1.0
-    trust: float          # 0.0 → 1.0
+    trust: float = 0.35   # 0.0 → 1.0; 0.35 prevents premature guarded
     attachment: float     # 0.0 → 1.0
     comfort: float        # 0.0 → 1.0
     dependency: float     # 0.0 → 1.0
+    baseline_mood: str    # "warm" | "subdued" | "neutral" (from trailing 5 emotional records)
+    emotional_mode: str   # "comforting" | "withdrawn" | "yearning" | "excited" | "soft" | "neutral"
+    mode_strength: float  # 0.0 → 1.0; decays ×0.85/turn; resists overwrite when > 0.5
 ```
 
 ### State update rules
@@ -209,7 +219,7 @@ class EmotionalRecord:
 ```
 
 ### Salience filter
-Only records where `abs(valence) * arousal >= 0.35` are stored. Prevents memory pollution from low-emotion chit-chat.
+Only records where `abs(valence) * arousal * (1 + 0.2 * recurrence) >= 0.25` are stored. Prevents memory pollution from low-emotion chit-chat. Recurrence boost means repeated topics are weighted higher.
 
 ### Recurrence merging
 If the same content appears within 1 hour, recurrence counter increments instead of creating a duplicate.
@@ -231,6 +241,7 @@ Invisible search→extract→summarize subsystem. Replaces the old Planner with 
 - Triggered by keywords (rangkum, cari, jelaskan, search, etc.)
 - Runs `web_search` → optionally `web_extract` → returns synthesized text
 - Returns `str | None` — no DAG, no JSON, no ToolContext exposure
+- Search query auto-cleaned via `_clean_query()` (`rfind`-based prefix stripping)
 
 **What it does NOT do:**
 - No visible execution traces
@@ -239,7 +250,7 @@ Invisible search→extract→summarize subsystem. Replaces the old Planner with 
 - No JSON planning
 - No step enumeration
 
-Cognition is called by PersonalityCore when the decision is made that factual information is needed. The result is injected into the prompt as "Relevant factual context:" — the LLM sees it as natural knowledge, not tool output.
+Cognition is called by PersonalityCore AFTER tool routing (calculator/datetime/tavily take priority). The result is injected after the user question as `Hasil pencarian:` — the LLM sees it as natural knowledge, not tool output.
 
 **Status:** IMPLEMENTED
 
@@ -361,7 +372,7 @@ Features:
 - importance scoring (1–4, from extractor)
 - deduplication
 - capped at 500 facts, injects max 10
-- sorted by importance + recency
+- per-tier quota: 5 most important + 5 most recent (prevents importance shadowing)
 - explicit `importance` parameter
 
 **Status:** IMPLEMENTED
@@ -454,30 +465,36 @@ WIB (UTC+7), Indonesian locale (Senin, Selasa, ..., Januari, ...).
 flowchart LR
     USER["User"] --> PC["PersonalityCore.handle()"]
 
-    PC --> A["analyze()\n→ EmotionAnalysis"]
-    A --> B["state.update()\n+ decay()"]
-    B --> C{"salience\n>= 0.35?"}
-    C -->|yes| D["emotional.record()"]
-    C -->|no| E{"cognition\nneeded?"}
-    D --> E
+    PC --> A["inactivity effect\nabsence → trust/attachment delta"]
+    A --> B["analyze()\n→ EmotionAnalysis"]
+    B --> C["state.update()\n+ decay()"]
+    C --> D{"salience\n>= 0.25?"}
+    D -->|yes| E["emotional.record()\n+ recurrence boost"]
+    D -->|no| F["_update_baseline_mood()\n_update_emotional_mode()"]
+    E --> F
 
-    E -->|yes| F["cognition.process()\ninvisible search→extract"]
-    E -->|no| G{"tool\nneeded?"}
-    G -->|calc/dt| H["orch.run_tool()"]
-    G -->|no| I[""]
-    F --> J["build_prompt()"]
-    H --> J
-    I --> J
+    F --> G["is_emotional?\nvalence/arousal gate"]
+    G -->|yes| H["skip search"]
+    G -->|no| I["_route_tool()\ncalc → datetime → tavily"]
+    I -->|hit| J["Tool result → ctx"]
+    I -->|miss| K["Cognition.can_handle()"]
+    K -->|yes| L["cognition.process()\ninvisible search→extract"]
+    K -->|no| M[""]
 
-    J --> K["Agent.generate()"]
-    K --> L["LLM inference"]
-    L --> M["_clean_response()"]
-    M --> N["short_memory.add()"]
-    N --> O["Response"]
+    J --> N["build_prompt()\nstate → nat lang + rhythm"]
+    L --> N
+    M --> N
 
-    style F stroke-dasharray:5 5,fill:#fff3e0
-    style L fill:#fce4ec
-    style O fill:#e8f5e9
+    N --> O["Agent.generate()"]
+    O --> P["LLM inference"]
+    P --> Q["_clean_response()"]
+    Q --> R["short_memory.add()"]
+    R --> S["Response"]
+
+    style L stroke-dasharray:5 5,fill:#fff3e0
+    style Q fill:#e1f5fe
+    style P fill:#fce4ec
+    style S fill:#e8f5e9
 ```
 
 ---
@@ -494,7 +511,7 @@ flowchart LR
 | Tool visibility | `=== Planner execution ===` | Never visible |
 | Orchestrator role | Coordinator + personality | Pure infra boundary |
 | State management | SessionState + ref resolution | Relationship state + emotional memory |
-| Test count | 30 | 38 |
+| Test count | 30 | 38 (all passing) |
 
 ---
 
@@ -537,18 +554,26 @@ flowchart LR
 - Emotion analysis (4 emotions, valence/arousal)
 - Relationship state (5 dimensions, decay, stage label)
 - Mood modulation (5 moods, emergent)
-- Emotional memory (salience filter, recurrence merging)
-- Short-term memory (4k budget, ignore/truncate)
-- Long-term memory (JSON, importance, dedup)
+- Emotional mode system (6 modes, mode_strength decay 0.85, overwrite guard > 0.5)
+- Emotional memory (salience filter 0.25, recurrence boost, recurrence merging)
+- Short-term memory (ignore/truncate)
+- Long-term memory (JSON, per-tier quota 5+5, dedup)
 - Fact extraction (type, importance, framing strip)
-- Cognition (invisible search→extract→summarize)
+- Inactivity effects (severity-scaled trust/attachment deltas, absence bucket guard)
+- Initiative system (probabilistic openers, 5 relationship-aware branches)
+- Rhythm system (7-priority matrix, mode modulation, reaction cooldowns)
+- Baseline mood (trailing 5 emotional records, time-weighted)
+- Cognition (invisible search→extract→summarize, rfind-based query cleaning)
+- Tool routing priority (calculator/datetime/tavily before cognition)
 - Orchestrator (pure infra boundary)
 - ToolContext + ToolResult + ToolRegistry
-- Web search (Tavily, TTL cache, retry)
-- Calculator + Datetime tools
-- Prompt composition (state → natural language)
+- Web search (Tavily, TTL cache, retry, prefix stripping)
+- Calculator (+ sqrt/sin/cos/%, injection blocked)
+- Datetime (WIB Indonesian locale)
+- Prompt composition (state → natural language, rhythm style, inactivity context)
 - Agent layer (Qwen format, context budgeting, response cleanup)
-- Automated testing (38 assertions)
+- Schema-versioned persistence (v2, baseline_mood migration)
+- Automated testing (38 assertions passing)
 
 ## In Progress
 - Emotional depth (arcs, attachment, conflict)

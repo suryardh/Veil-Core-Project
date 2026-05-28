@@ -52,12 +52,16 @@ class LongTermMemory:
         if not candidates:
             candidates = facts[-5:]
 
-        # Sort by importance desc, then by recency desc
-        candidates = sorted(
+        # Take top 5 by importance desc, then top 5 by recency from remaining
+        by_importance = sorted(
             candidates,
             key=lambda f: (f.get("importance", 1), f.get("timestamp", 0)),
             reverse=True,
-        )[: self.MAX_INJECT]
+        )[:5]
+        by_recency = sorted(candidates, key=lambda f: f.get("timestamp", 0), reverse=True)
+        used_ids = {id(f) for f in by_importance}
+        fill = [f for f in by_recency if id(f) not in used_ids][:5]
+        candidates = by_importance + fill
 
         lines = []
         for fact in candidates:

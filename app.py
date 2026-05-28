@@ -34,6 +34,9 @@ def main():
 
     try:
         while True:
+            opener = core.initiative_cue()
+            if opener:
+                print(f"\nStella: {opener}")
             user = input("You: ")
             if user.lower() in ("exit", "quit"):
                 break

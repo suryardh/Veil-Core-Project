@@ -1,3 +1,5 @@
+import re
+
 from tools.base import ToolContext
 
 _TRIGGERS = ["rangkum", "ringkas", "summarize", "detail", "jelaskan", "explain", "cari tahu", "cari", "search"]
@@ -8,17 +10,23 @@ def _should_process(text: str) -> bool:
     return any(t in lower for t in _TRIGGERS)
 
 
+def _clean(text: str) -> str:
+    text = re.sub(r"[#*|�]", "", text)
+    text = re.sub(r"\s{2,}", " ", text)
+    return text.strip()
+
+
 def _summarize(results: list[dict]) -> str:
     if not results:
         return ""
     parts = []
     for r in results[:3]:
-        snippet = r.get("snippet", r.get("content", ""))[:200]
-        title = r.get("title", "")
+        title = _clean(r.get("title", ""))
+        snippet = _clean(r.get("snippet", r.get("content", ""))[:200])
         if title and snippet:
-            parts.append(f"{title}: {snippet}")
+            parts.append(f"- {title}: {snippet}")
         elif snippet:
-            parts.append(snippet)
+            parts.append(f"- {snippet}")
     return "\n".join(parts)
 
 

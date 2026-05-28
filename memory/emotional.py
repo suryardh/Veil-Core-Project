@@ -4,7 +4,7 @@ import time
 from dataclasses import dataclass, field, asdict
 from typing import Any
 
-SALIENCE_THRESHOLD = 0.35
+SALIENCE_THRESHOLD = 0.25
 RECURRENCE_WINDOW = 3600
 
 
@@ -19,7 +19,7 @@ class EmotionalRecord:
 
     @property
     def salience(self) -> float:
-        return abs(self.valence) * self.arousal
+        return abs(self.valence) * self.arousal * (1 + 0.2 * self.recurrence)
 
 
 class EmotionalMemory:
@@ -42,7 +42,8 @@ class EmotionalMemory:
             json.dump(self.records, f, ensure_ascii=False, indent=2)
 
     def record(self, type_: str, content: str, valence: float, arousal: float):
-        if abs(valence) * arousal < SALIENCE_THRESHOLD:
+        record = EmotionalRecord(type=type_, content=content, valence=valence, arousal=arousal)
+        if record.salience < SALIENCE_THRESHOLD:
             return
         now = time.time()
         for r in self.records:
@@ -51,10 +52,8 @@ class EmotionalMemory:
                 r["timestamp"] = now
                 self._save()
                 return
-        self.records.append(EmotionalRecord(
-            type=type_, content=content, valence=valence,
-            arousal=arousal, timestamp=now,
-        ).__dict__)
+        record.timestamp = now
+        self.records.append(record.__dict__)
         self._save()
 
     def recall_recent(self, n: int = 5) -> list[dict]:

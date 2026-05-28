@@ -24,6 +24,64 @@ def classify_absence(hours: float) -> str:
     return "very_long"
 
 
+@dataclass
+class InactivityEffect:
+    hours_away: float = 0.0
+    severity: str = "short"
+    mood_shift: str | None = None
+    trust_delta: float = 0.0
+    attachment_delta: float = 0.0
+    initiative_multiplier: float = 1.0
+
+
+SEVERITY_MULT = {
+    "recent": 0.0,
+    "short": 0.0,
+    "medium": 0.5,
+    "long": 0.8,
+    "very_long": 1.0,
+}
+
+MAX_DELTA = 0.03
+
+
+def _branch_effect(absence: str, state: StellaState) -> tuple[str | None, float, float, float]:
+    base = SEVERITY_MULT.get(absence, 0.0)
+
+    if state.attachment > 0.6 and state.trust > 0.5:
+        return ("yearning", 0.0, MAX_DELTA * base, 1.3)
+
+    if state.attachment > 0.6 and state.trust <= 0.5:
+        return ("withdrawn", -MAX_DELTA * base, 0.0, 0.6)
+
+    if state.trust > 0.5:
+        mood = "soft" if absence in ("medium", "long") else None
+        return (mood, 0.0, MAX_DELTA * 0.5 * base, 1.1)
+
+    mood = "withdrawn" if absence in ("long", "very_long") else None
+    return (mood, -MAX_DELTA * 0.5 * base, 0.0, 0.8)
+
+
+def compute_inactivity_effect(state: StellaState, now: float) -> InactivityEffect:
+    if state.last_interaction_ts <= 0:
+        return InactivityEffect()
+
+    hours = (now - state.last_interaction_ts) / 3600
+    absence = classify_absence(hours)
+    if absence == "recent":
+        return InactivityEffect(hours_away=hours, severity="short")
+
+    mood_shift, trust_delta, attachment_delta, initiative_mult = _branch_effect(absence, state)
+    return InactivityEffect(
+        hours_away=hours,
+        severity=absence,
+        mood_shift=mood_shift,
+        trust_delta=round(trust_delta, 4),
+        attachment_delta=round(attachment_delta, 4),
+        initiative_multiplier=initiative_mult,
+    )
+
+
 def compute_inactivity_context(state: StellaState, now: float) -> InactivityContext:
     if state.last_interaction_ts <= 0:
         return InactivityContext()

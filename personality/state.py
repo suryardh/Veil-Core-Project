@@ -19,12 +19,14 @@ class StellaIdentity:
 @dataclass
 class StellaState:
     affection: float = 0.0
-    trust: float = 0.3
+    trust: float = 0.35
     attachment: float = 0.0
     comfort: float = 0.5
     dependency: float = 0.0
     last_interaction_ts: float = 0.0
     baseline_mood: str = "neutral"
+    emotional_mode: str = "neutral"
+    mode_strength: float = 0.0
 
     _decay_rates: dict = field(default_factory=lambda: {
         "affection": 0.998,
@@ -94,16 +96,20 @@ class StellaState:
             "dependency": self.dependency,
             "last_interaction_ts": self.last_interaction_ts,
             "baseline_mood": self.baseline_mood,
+            "emotional_mode": self.emotional_mode,
+            "mode_strength": self.mode_strength,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> StellaState:
         return cls(
             affection=float(data.get("affection", 0.0)),
-            trust=float(data.get("trust", 0.3)),
+            trust=float(data.get("trust", 0.35)),
             attachment=float(data.get("attachment", 0.0)),
             comfort=float(data.get("comfort", 0.5)),
             dependency=float(data.get("dependency", 0.0)),
             last_interaction_ts=float(data.get("last_interaction_ts", 0.0)),
             baseline_mood=str(data.get("baseline_mood", "neutral")),
+            emotional_mode=str(data.get("emotional_mode", "neutral")),
+            mode_strength=float(data.get("mode_strength", 0.0)),
         )

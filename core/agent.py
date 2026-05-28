@@ -41,23 +41,29 @@ class VeilAgent:
             text = pattern.sub(replacement, text)
         return text.strip()
 
-    def _build_prompt(self, system: str, user_input: str) -> str:
+    def _build_prompt(self, system: str, user_input: str, observation: str = "") -> str:
         history = self._format_history_as_chat()
         history = self._truncate(history, config.CTX_BUDGET_HISTORY)
         sep = "\n" if history else ""
+        full_input = f"User: {user_input}"
+        if observation:
+            full_input += f"\n\nHasil pencarian:\n{observation[:300]}"
         return (
             f"<|im_start|>system\n{system}<|im_end|>\n"
             f"{history}{sep}"
-            f"<|im_start|>user\n{user_input}<|im_end|>\n"
+            f"<|im_start|>user\n{full_input}<|im_end|>\n"
             f"<|im_start|>assistant\n"
         )
 
-    def generate(self, system: str, user_input: str) -> str:
-        prompt = self._build_prompt(system, user_input)
+    def generate(self, system: str, user_input: str, observation: str = "") -> str:
+        prompt = self._build_prompt(system, user_input, observation)
         prompt = self._truncate(prompt, config.N_CTX - config.CTX_BUDGET_RESPONSE)
         response = self.llm.generate(prompt)
         response = self._clean_response(response)
-        self.short_memory.add_message("user", user_input)
+        full_input = f"User: {user_input}"
+        if observation:
+            full_input += f"\n\nHasil pencarian:\n{observation[:300]}"
+        self.short_memory.add_message("user", full_input)
         self.short_memory.add_message("assistant", response)
         return response
 

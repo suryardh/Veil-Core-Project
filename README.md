@@ -20,6 +20,7 @@ beyond an agent with personality
 - **Stage progression** — "kenalan" → "akrab" → "dekat" → "sayang" → "istimewa" (non-linear, derived from state)
 - **Mood modulation** — warm, playful, guarded, yearning, neutral — shifts naturally per interaction
 - **State decay** — prevents relationship from being permanently maxed out
+- **Emotional mode** — comforting/withdrawn/yearning/excited/soft with mode_strength; resists overwrite when > 0.5
 - **Emotional memory** — stores interactions with valence/arousal weight; salience filter prevents pollution
 
 ## Personality System
@@ -28,11 +29,12 @@ beyond an agent with personality
 - **No mode switching** — dynamic state modulation replaces rigid mode toggles
 - **Identity permanence** — humor, warmth, teasing, emotional openness, protectiveness as fixed traits
 - **No numeric values in prompts** — state mapped to natural language descriptors
+- **Trust default 0.35** — prevents premature guarded mood after first decay
 
 ## Memory System
 
 - **Short-term memory** — recent conversation with 4k budget, chat-template format, ignore/truncate rules
-- **Long-term memory** — persistent JSON, importance scoring, dedup, structured extraction
+- **Long-term memory** — persistent JSON, per-tier quota (5 importance + 5 recency), dedup, structured extraction
 - **Emotional memory** — valence/arousal records with recurrence merging and salience filtering
 
 ## Tool System
@@ -41,12 +43,12 @@ Tools are executed **invisibly** behind the personality layer. Users see natural
 
 | Tool | Description |
 |------|-------------|
-| `web_search` | Tavily `/search` — web search with TTL cache |
+| `web_search` | Tavily `/search` — web search with TTL cache; `rfind`-based prefix stripping |
 | `web_extract` | Tavily `/extract` — URL content extraction |
-| `calculator` | Safe eval — math + percentage, injection blocked |
+| `calculator` | Safe eval — math + percentage + functions (sqrt, sin, cos), injection blocked |
 | `datetime` | WIB Indonesian locale |
 
-All tools return `ToolContext` — structured result with formatted + raw data (internal only).
+Tool routing runs **before** cognition — calculator/datetime/tavily always take priority over web search.
 
 ## Cognition (Subconscious)
 
@@ -54,6 +56,7 @@ All tools return `ToolContext` — structured result with formatted + raw data (
 - No DAG, no JSON planning, no visible execution
 - Triggered automatically when factuality is needed
 - Results injected as natural context, not raw execution output
+- Search query auto-cleaned: `"halo, cari kurs dollar"` → `"kurs dollar"`
 
 ---
 
@@ -65,11 +68,13 @@ flowchart TB
     Analyzer --> State["state.py\nrelationship update + decay"]
     State --> Emotional["emotional.py\nmemory record"]
 
-    Emotional --> Decision{"needs\ncognition?"}
-    Decision -->|yes| Cognition["cognition.py\nsearch → extract → summarize"]
-    Decision -->|no| Direct["direct chat"]
+    Emotional --> Route{"tool\nneeded?"}
+    Route -->|calc/datetime/tavily| Tool["_route_tool()\ninline execution"]
+    Route -->|cognition trigger| Cognition["cognition.py\nsearch → extract → summarize"]
+    Route -->|neither| Direct["direct chat"]
 
-    Cognition --> Prompt["prompting.py\nstate → nat lang + compose"]
+    Tool --> Prompt["prompting.py\nstate → nat lang + compose"]
+    Cognition --> Prompt
     Direct --> Prompt
 
     Prompt --> Agent["Agent.generate()\nQwen Instruct format"]
@@ -120,7 +125,11 @@ Veil/
 │   ├── state.py                ← StellaIdentity + StellaState (5-dim, decay)
 │   ├── analyzer.py             ← keyword → EmotionAnalysis
 │   ├── prompting.py            ← state → natural language descriptor
-│   └── stella.py               ← identity constants (base, rules, safety)
+│   ├── stella.py               ← identity constants (base, rules, safety)
+│   ├── persistence.py          ← save/load state.json (schema v2)
+│   ├── inactivity.py           ← absence detection + relationship deltas
+│   ├── initiative.py           ← probabilistic openers on user return
+│   └── rhythm.py               ← 7-priority matrix + mode modulation + reactions
 │
 ├── tools/
 │   ├── base.py                 ← BaseTool + ToolResult + ToolContext + ToolRegistry
@@ -215,7 +224,7 @@ python app.py
 python test_agent.py
 ```
 
-38 tests:
+38 tests (passing):
 - calculator (6)
 - datetime (4)
 - long-term memory (6)
