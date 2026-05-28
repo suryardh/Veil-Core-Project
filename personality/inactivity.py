@@ -68,8 +68,8 @@ def compute_inactivity_effect(state: StellaState, now: float) -> InactivityEffec
 
     hours = (now - state.last_interaction_ts) / 3600
     absence = classify_absence(hours)
-    if absence == "recent":
-        return InactivityEffect(hours_away=hours, severity="short")
+    if absence in ("recent", "short"):
+        return InactivityEffect(hours_away=hours, severity=absence)
 
     mood_shift, trust_delta, attachment_delta, initiative_mult = _branch_effect(absence, state)
     return InactivityEffect(

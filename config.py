@@ -17,13 +17,13 @@ SAMPLING = {
     "top_p": 0.95,
     "repeat_penalty": 1.1,
 }
-MAX_TOKENS = 150
-MAX_TOKENS_STREAM = 200
+MAX_TOKENS = 300
+MAX_TOKENS_STREAM = 400
 STOP_TOKENS = ["<|im_end|>"]
 
 # --- Context Budget (character proxies for token limits) ---
-CTX_BUDGET_SYSTEM = 2000
-CTX_BUDGET_HISTORY = 1500
+CTX_BUDGET_SYSTEM = 2500
+CTX_BUDGET_HISTORY = 2500
 CTX_BUDGET_RESPONSE = 800
 
 # --- Memory Configuration ---

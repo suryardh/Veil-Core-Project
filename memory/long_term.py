@@ -40,30 +40,23 @@ class LongTermMemory:
         facts = self.store.get("facts", [])
         if not facts:
             return "No long-term memories saved yet."
-        candidates = facts
+
         if query:
             query_words = [w.lower() for w in query.split() if len(w) > 2]
-            if query_words:
-                candidates = [
-                    f
-                    for f in facts
-                    if any(w in f["content"].lower() for w in query_words)
-                ]
-        if not candidates:
-            candidates = facts[-5:]
 
-        # Take top 5 by importance desc, then top 5 by recency from remaining
-        by_importance = sorted(
-            candidates,
-            key=lambda f: (f.get("importance", 1), f.get("timestamp", 0)),
-            reverse=True,
-        )[:5]
-        by_recency = sorted(candidates, key=lambda f: f.get("timestamp", 0), reverse=True)
-        used_ids = {id(f) for f in by_importance}
-        fill = [f for f in by_recency if id(f) not in used_ids][:5]
-        candidates = by_importance + fill
+        def _score(fact: dict) -> float:
+            if not query or not query_words:
+                return fact.get("importance", 1) / 5.0
+            content = fact["content"].lower()
+            matches = sum(1 for w in query_words if w in content)
+            match_ratio = matches / max(len(query_words), 1)
+            imp_norm = fact.get("importance", 1) / 5.0
+            return match_ratio * 0.7 + imp_norm * 0.3
+
+        scored = sorted(facts, key=_score, reverse=True)
+        top = scored[:10]
 
         lines = []
-        for fact in candidates:
+        for fact in top:
             lines.append(f"- {fact['content']}")
         return "\n".join(lines)

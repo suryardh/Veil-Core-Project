@@ -121,17 +121,20 @@ class WebSearchTool(BaseTool, _CachedMixin):
             "search for ", "google ", "browse ", "search ", "cari ", "browsing ",
             "cari di duckduckgo tentang ", "ddg ",
         ]
-        lower = query.lower()
-        best_idx = -1
-        best_len = 0
-        for prefix in prefixes:
-            idx = lower.rfind(prefix)
-            if idx != -1 and idx > best_idx:
-                best_idx = idx
-                best_len = len(prefix)
-        if best_idx != -1:
-            return query[best_idx + best_len:].strip()
-        return query.strip()
+        result = query.strip()
+        while True:
+            lower = result.lower()
+            best_idx = -1
+            best_len = 0
+            for prefix in prefixes:
+                idx = lower.find(prefix)
+                if idx != -1 and (best_idx == -1 or idx < best_idx):
+                    best_idx = idx
+                    best_len = len(prefix)
+            if best_idx == -1:
+                break
+            result = result[best_idx + best_len:].strip()
+        return result
 
     def execute(self, query: str) -> ToolResult:
         query = self._clean_query(query)

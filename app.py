@@ -1,3 +1,4 @@
+import os
 import sys
 import config
 from core.agent import VeilAgent
@@ -13,6 +14,10 @@ if hasattr(sys.stdout, "reconfigure"):
 
 
 def build_agent():
+    if not os.path.exists(config.MODEL_PATH):
+        log.error("Model file not found: %s", config.MODEL_PATH)
+        log.error("Download Qwen2.5-3B-Instruct Q4_K_M GGUF and place it at %s", config.MODEL_PATH)
+        sys.exit(1)
     return VeilAgent(config.MODEL_PATH)
 
 
@@ -37,7 +42,9 @@ def main():
             opener = core.initiative_cue()
             if opener:
                 print(f"\nStella: {opener}")
-            user = input("You: ")
+            user = input("You: ").strip()
+            if not user:
+                continue
             if user.lower() in ("exit", "quit"):
                 break
             response = core.handle(user)

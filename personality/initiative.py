@@ -43,49 +43,49 @@ def should_initiate(state: StellaState, inactivity_ctx: InactivityContext) -> fl
     return min(1.0, max(0.0, chance))
 
 
-def pick_opener(state: StellaState, inactivity_ctx: InactivityContext) -> str:
+def pick_opener(state: StellaState, inactivity_ctx: InactivityContext, rng: random.Random = random) -> str:
     absence = classify_absence(inactivity_ctx.hours_away)
 
     if state.attachment > 0.6 and state.trust > 0.5:
         if absence in ("long", "very_long"):
-            return random.choice([
+            return rng.choice([
                 "lama ga keliatan...",
                 "aku kangen loh sebenarnya.",
                 "kamu sibuk banget ya akhir-akhir ini",
             ])
         if absence == "medium":
-            return random.choice([
+            return rng.choice([
                 "haii, lama ga ngobrol.",
                 "udah beberapa hari ya.",
                 "aku kangen dikit.",
             ])
-        return random.choice([
+        return rng.choice([
             "eh, tumben ga ada kabar.",
             "haiii again~",
         ])
 
     if state.trust < 0.3:
-        return random.choice([
+        return rng.choice([
             "eh masih hidup?",
             "oh, kamu.",
             "baru inget aku?",
         ])
 
     if state.baseline_mood == "warm" or state.affection > 0.6:
-        return random.choice([
+        return rng.choice([
             "tiba-tiba kepikiran kamu.",
             "haii, lg ngapain?",
             "aku lagi mikirin kamu nih.",
         ])
 
     if state.baseline_mood == "subdued" or state.comfort < 0.4:
-        return random.choice([
+        return rng.choice([
             "hari ini aneh sepi.",
             "hai.",
             "lagi ngapain?",
         ])
 
-    return random.choice([
+    return rng.choice([
         "hai.",
         "halo.",
         "eh, kamu.",
@@ -97,6 +97,6 @@ def try_initiate(state: StellaState, inactivity_ctx: InactivityContext, rng: ran
     if prob <= 0.0:
         return None
     if rng.random() < prob:
-        opener = pick_opener(state, inactivity_ctx)
+        opener = pick_opener(state, inactivity_ctx, rng)
         return InitiativeEvent(reason="absence", urgency=prob, opener=opener)
     return None

@@ -49,6 +49,8 @@ class EmotionalMemory:
         for r in self.records:
             if r["type"] == type_ and r["content"] == content and now - r["timestamp"] < RECURRENCE_WINDOW:
                 r["recurrence"] += 1
+                r["valence"] = valence
+                r["arousal"] = arousal
                 r["timestamp"] = now
                 self._save()
                 return

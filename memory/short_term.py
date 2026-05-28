@@ -19,7 +19,8 @@ class ShortTermMemory:
         content = content.strip()
         if not content:
             return
-        if content.lower() in IGNORE_MESSAGES:
+        check = content.lower().removeprefix("user: ").strip()
+        if check in IGNORE_MESSAGES:
             return
         if len(content) > MAX_MESSAGE_CHARS:
             content = content[:MAX_MESSAGE_CHARS] + "..."

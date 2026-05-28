@@ -81,7 +81,7 @@ class StellaState:
             return "warm"
         if self.affection > 0.5 and self.trust > 0.6:
             return "playful"
-        if self.comfort < 0.3 or self.trust < 0.2:
+        if self.comfort < 0.3 or self.trust < 0.3:
             return "guarded"
         if self.attachment > 0.7 and self.dependency > 0.5:
             return "yearning"

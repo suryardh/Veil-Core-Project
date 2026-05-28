@@ -62,7 +62,7 @@ class Cognition:
             if extract_result.success:
                 extracted = extract_result.data.get("results", [])
                 if extracted:
-                    content = extracted[0].get("content", "")[:500]
+                    content = extracted[0].get("content", "")[:300]
                     if content:
                         return content
 

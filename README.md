@@ -58,6 +58,18 @@ Tool routing runs **before** cognition — calculator/datetime/tavily always tak
 - Results injected as natural context, not raw execution output
 - Search query auto-cleaned: `"halo, cari kurs dollar"` → `"kurs dollar"`
 
+## TUI (Optional)
+
+A rich-based split-panel TUI is available via `app_tui.py`:
+- Emotional state header (mood, trust, attachment, stage)
+- Scrollable color-coded conversation history (green=user, cyan=Stella)
+- Clean input prompt
+
+```bash
+pip install rich   # if not already installed
+python app_tui.py
+```
+
 ---
 
 # Architecture
@@ -101,9 +113,10 @@ flowchart TB
 
 ```text
 Veil/
-├── app.py                      ← entry point
+├── app.py                      ← CLI entry point
+├── app_tui.py                  ← TUI entry point (rich, split-panel)
 ├── config.py                   ← all tunables + .env
-├── test_agent.py               ← 38 assertions
+├── test_agent.py               ← 43 assertions
 │
 ├── core/
 │   ├── cognition.py            ← invisible search→extract→summarize
@@ -198,7 +211,8 @@ Main config in `config.py`:
 - CPU thread allocation
 - Sampling parameters (temp, top_p, repeat_penalty)
 - Context size (4096)
-- Context budgeting (system: 2k, history: 1.5k, response: 800)
+- Context budgeting (system: 2.5k, history: 2.5k, response: 800)
+- Max tokens: 300 (normal), 400 (stream)
 - Memory limits
 - Search timeout & cache size
 
@@ -212,8 +226,14 @@ TAVILY_API_KEY=tvly-...
 
 # Run
 
+### CLI (default)
 ```bash
 python app.py
+```
+
+### TUI (rich-based)
+```bash
+python app_tui.py
 ```
 
 ---
@@ -224,12 +244,17 @@ python app.py
 python test_agent.py
 ```
 
-38 tests (passing):
+### TUI (rich-based)
+```bash
+python app_tui.py
+```
+
+43 tests (passing):
 - calculator (6)
 - datetime (4)
 - long-term memory (6)
 - short-term memory (4)
-- emotional analysis (4)
+- emotional analysis (9)
 - state management (6)
 - emotional memory (4)
 - orchestrator (1)

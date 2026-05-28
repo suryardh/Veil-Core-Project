@@ -74,5 +74,5 @@ class VeilAgent:
             full_response += token
             yield token
         full_response = self._clean_response(full_response)
-        self.short_memory.add_message("user", user_input)
+        self.short_memory.add_message("user", f"User: {user_input}")
         self.short_memory.add_message("assistant", full_response)

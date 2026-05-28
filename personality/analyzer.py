@@ -15,12 +15,32 @@ LEXICON: list[tuple[re.Pattern, str, float, float]] = [
     (re.compile(r"\bpeluk\b"), "intimate", 0.8, 0.4),
     (re.compile(r"\bmesra\b"), "intimate", 0.8, 0.6),
     (re.compile(r"\bbersama\b"), "intimate", 0.6, 0.3),
+    (re.compile(r"\bdekat\b"), "intimate", 0.5, 0.3),
+    (re.compile(r"\bhayat\b"), "intimate", 0.7, 0.5),
+    (re.compile(r"\bbutuh\b"), "intimate", 0.5, 0.6),
     (re.compile(r"\bmakasih\b"), "positive", 0.6, 0.3),
     (re.compile(r"\bterima kasih\b"), "positive", 0.6, 0.2),
     (re.compile(r"\bsuka\b"), "positive", 0.6, 0.4),
     (re.compile(r"\bsenang\b"), "positive", 0.7, 0.5),
     (re.compile(r"\bbaik\b"), "positive", 0.5, 0.3),
     (re.compile(r"\bbangga\b"), "positive", 0.7, 0.6),
+    (re.compile(r"\bsemangat\b"), "positive", 0.7, 0.6),
+    (re.compile(r"\bhebat\b"), "positive", 0.6, 0.4),
+    (re.compile(r"\bkeren\b"), "positive", 0.6, 0.4),
+    (re.compile(r"\bpintar\b"), "positive", 0.5, 0.3),
+    (re.compile(r"\bcantik\b"), "positive", 0.7, 0.4),
+    (re.compile(r"\bganteng\b"), "positive", 0.7, 0.4),
+    (re.compile(r"\blucu\b"), "positive", 0.6, 0.5),
+    (re.compile(r"\bbahagia\b"), "positive", 0.8, 0.6),
+    (re.compile(r"\btenang\b"), "positive", 0.4, 0.2),
+    (re.compile(r"\bnyaman\b"), "positive", 0.5, 0.3),
+    (re.compile(r"\bindah\b"), "positive", 0.5, 0.3),
+    (re.compile(r"\bbersyukur\b"), "positive", 0.6, 0.3),
+    (re.compile(r"\blega\b"), "positive", 0.5, 0.3),
+    (re.compile(r"\bsenyum\b"), "positive", 0.5, 0.3),
+    (re.compile(r"\btertawa\b"), "positive", 0.6, 0.6),
+    (re.compile(r"\boptimis\b"), "positive", 0.5, 0.4),
+    (re.compile(r"\bhappy\b"), "positive", 0.7, 0.6),
     (re.compile(r"\bkenapa\b"), "negative", -0.4, 0.5),
     (re.compile(r"\bkesel\b"), "negative", -0.7, 0.7),
     (re.compile(r"\bmarah\b"), "negative", -0.9, 0.9),
@@ -31,12 +51,41 @@ LEXICON: list[tuple[re.Pattern, str, float, float]] = [
     (re.compile(r"\bkesepian\b"), "negative", -0.6, 0.5),
     (re.compile(r"\bsakit hati\b"), "negative", -0.7, 0.7),
     (re.compile(r"\bfrustasi\b"), "negative", -0.7, 0.8),
+    (re.compile(r"\bbosan\b"), "negative", -0.4, 0.3),
+    (re.compile(r"\bpusing\b"), "negative", -0.4, 0.5),
+    (re.compile(r"\blelah\b"), "negative", -0.4, 0.3),
+    (re.compile(r"\bbingung\b"), "negative", -0.3, 0.5),
+    (re.compile(r"\btakut\b"), "negative", -0.6, 0.7),
+    (re.compile(r"\bcemas\b"), "negative", -0.5, 0.7),
+    (re.compile(r"\bkhawatir\b"), "negative", -0.5, 0.6),
+    (re.compile(r"\bsakit\b"), "negative", -0.5, 0.5),
+    (re.compile(r"\bjengkel\b"), "negative", -0.6, 0.6),
+    (re.compile(r"\bmuak\b"), "negative", -0.6, 0.6),
+    (re.compile(r"\bsebel\b"), "negative", -0.5, 0.5),
+    (re.compile(r"\bbete\b"), "negative", -0.5, 0.5),
+    (re.compile(r"\bgalau\b"), "negative", -0.5, 0.5),
+    (re.compile(r"\bdown\b"), "negative", -0.4, 0.3),
+    (re.compile(r"\bminder\b"), "negative", -0.4, 0.4),
+    (re.compile(r"\binsecure\b"), "negative", -0.5, 0.5),
+    (re.compile(r"\biri\b"), "negative", -0.4, 0.4),
+    (re.compile(r"\bdengki\b"), "negative", -0.5, 0.5),
+    (re.compile(r"\bpergi\b"), "negative", -0.2, 0.3),
+    (re.compile(r"\bpergi\b.*\bsaja\b"), "negative", -0.4, 0.4),
+    (re.compile(r"\btinggal\b"), "negative", -0.3, 0.3),
+    (re.compile(r"\bpergilah\b"), "negative", -0.5, 0.5),
     (re.compile(r"\bgak sayang\b"), "negative", -0.7, 0.7),
     (re.compile(r"\bga sayang\b"), "negative", -0.7, 0.7),
     (re.compile(r"\bnggak sayang\b"), "negative", -0.7, 0.7),
     (re.compile(r"\bga suka\b"), "negative", -0.5, 0.5),
     (re.compile(r"\bgak suka\b"), "negative", -0.5, 0.5),
     (re.compile(r"\btidak suka\b"), "negative", -0.5, 0.5),
+    (re.compile(r"\bgak mau\b"), "negative", -0.4, 0.5),
+    (re.compile(r"\bga mau\b"), "negative", -0.4, 0.5),
+    (re.compile(r"\bnggak mau\b"), "negative", -0.4, 0.5),
+    (re.compile(r"\bgak pernah\b"), "negative", -0.3, 0.4),
+    (re.compile(r"\bga pernah\b"), "negative", -0.3, 0.4),
+    (re.compile(r"\bgak peduli\b"), "negative", -0.5, 0.5),
+    (re.compile(r"\bga peduli\b"), "negative", -0.5, 0.5),
 ]
 
 INTENSIFIERS = [
@@ -99,10 +148,13 @@ def analyze(text: str) -> EmotionAnalysis:
         for e in matched_emotions:
             emotion_counts[e] = emotion_counts.get(e, 0) + 1
 
-        if has_negation and emotion_counts.get("negative", 0) > 0:
-            dominant = "negative"
-            if avg_val > 0:
-                avg_val = -avg_val
+        if has_negation:
+            neg_count = emotion_counts.get("negative", 0)
+            non_neg_count = len(matched_emotions) - neg_count
+            if neg_count >= non_neg_count:
+                dominant = "negative"
+            else:
+                dominant = max(emotion_counts, key=emotion_counts.get)
         else:
             dominant = max(emotion_counts, key=emotion_counts.get)
 

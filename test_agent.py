@@ -121,6 +121,21 @@ test("positive emotion", r.emotion == "positive" and r.valence > 0)
 r = analyze("")
 test("empty returns neutral", r.emotion == "neutral")
 
+r = analyze("aku semangat banget hari ini")
+test("positive semangat", "positive" in r.emotion and r.valence > 0)
+
+r = analyze("aku takut kamu pergi")
+test("takut + pergi negative", r.valence < 0, f"val={r.valence}")
+
+r = analyze("kamu keren banget")
+test("positive keren", r.valence > 0, f"val={r.valence}")
+
+r = analyze("aku ga peduli")
+test("ga peduli negative", r.valence < 0, f"val={r.valence}")
+
+r = analyze("lagi bete nih")
+test("negative bete", r.valence < 0, f"val={r.valence}")
+
 print("\n--- State Management ---")
 s = StellaState()
 test("default stage kenalan", s.stage_label() == "kenalan")

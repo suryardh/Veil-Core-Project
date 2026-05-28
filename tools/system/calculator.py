@@ -6,9 +6,8 @@ MAX_EXPR_LENGTH = 100
 BLOCKED_PATTERNS = re.compile(r"__|\[|\]|\{|\}|lambda|import|exec|compile|eval|open|getattr|setattr")
 
 PCT_PATTERNS = [
-    re.compile(r"(\d+(?:\.\d+)?)\s*%\s*(?:of|dari)?\s*(\d+(?:\.\d+)?)", re.IGNORECASE),
+    re.compile(r"(\d+(?:\.\d+)?)\s*%\s*(?:dari|of)?\s*(\d+(?:\.\d+)?)", re.IGNORECASE),
     re.compile(r"(\d+(?:\.\d+)?)\s*(?:%|persen)\s*(?:dari|of)\s*(\d+(?:\.\d+)?)", re.IGNORECASE),
-    re.compile(r"(\d+(?:\.\d+)?)\s*%\s*(\d+(?:\.\d+)?)"),
 ]
 
 

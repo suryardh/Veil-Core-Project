@@ -2,11 +2,9 @@ import json
 import os
 import tempfile
 
+from utils.logger import log
+
 class JSONStore:
-    """
-    Simple JSON-based persistent storage for agent memories.
-    Provides basic dictionary-like operations with atomic saves.
-    """
     def __init__(self, filepath: str):
         self.filepath = filepath
         self.data = {}
@@ -18,7 +16,7 @@ class JSONStore:
                 with open(self.filepath, "r", encoding="utf-8") as f:
                     self.data = json.load(f)
             except Exception as e:
-                print(f"[JSONStore] Load error: {e}")
+                log.warning("Load error from %s: %s", self.filepath, e)
                 self.data = {}
         else:
             self.data = {}
@@ -35,7 +33,7 @@ class JSONStore:
                 tmp_path = tmp.name
             os.replace(tmp_path, self.filepath)
         except Exception as e:
-            print(f"[JSONStore] Save error: {e}")
+            log.warning("Save error to %s: %s", self.filepath, e)
 
     def get(self, key, default=None):
         return self.data.get(key, default)

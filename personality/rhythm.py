@@ -77,8 +77,8 @@ REACTION_TEMPLATES: dict[str, list[str]] = {
 }
 
 
-def try_reaction(state: StellaState, analysis: EmotionAnalysis, last_reaction_ts: float, rng: random.Random = random) -> ReactionResult | None:
-    now = time.time()
+def try_reaction(state: StellaState, analysis: EmotionAnalysis, last_reaction_ts: float, rng: random.Random = random, now: float | None = None) -> ReactionResult | None:
+    now = now or time.time()
     if now - last_reaction_ts < REACTION_COOLDOWN:
         return None
 

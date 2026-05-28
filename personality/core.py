@@ -1,9 +1,9 @@
 import random as _random
 import re
-
 import time
 
 from core.cognition import Cognition
+from utils.async_utils import with_retry
 from personality.analyzer import analyze
 from personality.state import StellaState, StellaIdentity
 from personality.inactivity import InactivityContext, InactivityEffect, compute_inactivity_context, compute_inactivity_effect
@@ -49,6 +49,7 @@ class PersonalityCore:
         self.state = load_state()
         self.identity = StellaIdentity()
         self.last_reaction_ts: float = 0.0
+        self._last_initiative_ts: float = 0.0
         self._last_absence_bucket: str = ""
 
     def _identity_blob(self) -> str:
@@ -56,18 +57,18 @@ class PersonalityCore:
 
     def _route_tool(self, text: str) -> str | None:
         if _is_calculator(text):
-            result = self.orch.run_tool("calculator", text)
-            if result.success:
+            result = with_retry(self.orch.run_tool, "calculator", text, max_retries=1)
+            if result and result.success:
                 return result.data.get("result", "")
             return None
         if _is_datetime(text):
-            result = self.orch.run_tool("datetime")
-            if result.success:
+            result = with_retry(self.orch.run_tool, "datetime", max_retries=1)
+            if result and result.success:
                 return str(result.data)
             return None
         if _is_tavily(text):
-            result = self.orch.run_tool("tavily_usage")
-            if result.success:
+            result = with_retry(self.orch.run_tool, "tavily_usage", max_retries=1)
+            if result and result.success:
                 return str(result.data.get("raw", ""))
             return None
         return None
@@ -85,10 +86,10 @@ class PersonalityCore:
             self.state.baseline_mood = "neutral"
 
     def _apply_inactivity_effect(self, effect: InactivityEffect):
-        if effect.severity == "recent" or effect.severity == "short":
+        if effect.severity in ("recent", "short"):
             self._last_absence_bucket = ""
             return
-        if effect.severity == self._last_absence_bucket and effect.severity != "very_long":
+        if effect.severity == self._last_absence_bucket:
             return
         self._last_absence_bucket = effect.severity
         self.state.trust = max(0.0, min(1.0, self.state.trust + effect.trust_delta))
@@ -125,12 +126,16 @@ class PersonalityCore:
             self.state.mode_strength = 0.0
 
     def initiative_cue(self, inactivity_ctx: InactivityContext | None = None) -> str | None:
+        now = time.time()
+        if now - self._last_initiative_ts < 300:
+            return None
         from personality.initiative import try_initiate
         if inactivity_ctx is None:
-            inactivity_ctx = compute_inactivity_context(self.state, time.time())
+            inactivity_ctx = compute_inactivity_context(self.state, now)
         event = try_initiate(self.state, inactivity_ctx, _random)
         if event is None:
             return None
+        self._last_initiative_ts = now
         return event.opener
 
     def handle(self, user_input: str) -> str:
@@ -148,7 +153,7 @@ class PersonalityCore:
         self._update_emotional_mode(analysis)
 
         rhythm = compute_rhythm(self.state, analysis)
-        reaction = try_reaction(self.state, analysis, self.last_reaction_ts, _random)
+        reaction = try_reaction(self.state, analysis, self.last_reaction_ts, _random, now)
         if reaction is not None:
             self.last_reaction_ts = now
             self.state.last_interaction_ts = now

@@ -279,7 +279,8 @@ Prompt assembly and LLM interaction layer.
 **Responsibilities:**
 - Build prompt in Qwen Instruct format (`<|im_start|>`)
 - Format history as chat-template blocks
-- Context budgeting (system: 2k, history: 1.5k, response: 800)
+- Context budgeting (system: 2.5k, history: 2.5k, response: 800)
+- Max tokens: 300 (normal), 400 (stream)
 - Sanitize model output (regex + split on first `<|im_end|>`)
 - Update short-term memory
 
@@ -511,7 +512,7 @@ flowchart LR
 | Tool visibility | `=== Planner execution ===` | Never visible |
 | Orchestrator role | Coordinator + personality | Pure infra boundary |
 | State management | SessionState + ref resolution | Relationship state + emotional memory |
-| Test count | 30 | 38 (all passing) |
+| Test count | 30 | 43 (all passing) |
 
 ---
 
@@ -572,8 +573,42 @@ flowchart LR
 - Datetime (WIB Indonesian locale)
 - Prompt composition (state → natural language, rhythm style, inactivity context)
 - Agent layer (Qwen format, context budgeting, response cleanup)
-- Schema-versioned persistence (v2, baseline_mood migration)
-- Automated testing (38 assertions passing)
+- Schema-versioned persistence (v2, baseline_mood + emotional_mode + mode_strength migration)
+- Observation context preserved between turns (augmented user input stored in history)
+- Inactivity effect stacking guard (all severities dedup including very_long)
+- Structured logging (print → log.warning/log.error in store, persistence)
+- CoRT analysis (51 bugs identified: 5 high, 12 medium, 34 low — all high+medium fixed)
+- Post-CoRT improvements: lexicon enriched (30+ words), scoring-based recall, tool retry, schema migration registry
+- TUI with rich (split-panel, emotional state display, colored history)
+- Automated testing (43 assertions passing)
+
+## Recent Fixes (May 2026)
+- **agent.py**: Observation loss between turns fixed — augmented input stored in history
+- **state.py**: dominant_mood trust threshold 0.2→0.3 (aligned with inactivity/initiative)
+- **core.py**: very_long inactivity guard; now parameter passed to try_reaction
+- **analyzer.py**: Negation override only when neg_count >= non_neg_count (no valence flip)
+- **cognition.py**: Extract truncation 500→300 chars (matches agent.py usage)
+- **inactivity.py**: Severity naming consistent; short absence skips _branch_effect
+- **initiative.py**: pick_opener accepts rng parameter (deterministic tests)
+- **rhythm.py**: try_reaction accepts optional now parameter
+- **persistence.py**: Explicit v1→v2 migration for all fields; error logging
+- **search.py**: Multi-pass _clean_query (nested prefix stripping)
+- **emotional.py**: Valence/arousal updated on recurrence (not just timestamp/count)
+- **store.py**: print() → log.warning() in production path
+- **calculator.py**: Simplified PCT_PATTERNS (removed redundant pattern)
+- **short_term.py**: "User:" prefix stripped before IGNORE_MESSAGES check
+- **agent.py chat_stream()**: Consistent "User:" prefix with generate()
+- **app.py**: Empty input validation (skip instead of process)
+
+### Post-CoRT Quality Sprint (May 2026)
+- **config.py**: MAX_TOKENS 150→300, MAX_TOKENS_STREAM 200→400; CTX_BUDGET_HISTORY 1500→2500, CTX_BUDGET_SYSTEM 2000→2500
+- **app.py**: Model file existence check with actionable error message
+- **core.py**: Initiative throttle (300s cooldown); tool retry via `with_retry()` on all 3 paths
+- **persistence.py**: Structured schema migration registry (`_register` decorator, auto-chain v→v+1)
+- **analyzer.py**: Lexicon enriched from 27→57 entries (semangat, hebat, keren, takut, cemas, bosan, etc.); multi-word negations (gak mau, ga peduli); 5 new test cases
+- **memory/long_term.py**: Scoring-based recall — `match_ratio × 0.7 + importance_norm × 0.3`, top 10 results (was binary filter + 5+5 quota)
+- **app_tui.py**: Rich-based split-panel TUI with emotional state header, colored conversation history, input prompt
+- **requirements.txt**: Added `rich` dependency
 
 ## In Progress
 - Emotional depth (arcs, attachment, conflict)
