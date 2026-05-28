@@ -23,10 +23,11 @@ class JSONStore:
             self._save()
 
     def _save(self):
-        os.makedirs(os.path.dirname(self.filepath), exist_ok=True)
+        dirpath = os.path.dirname(os.path.abspath(self.filepath))
+        os.makedirs(dirpath, exist_ok=True)
         try:
             with tempfile.NamedTemporaryFile(
-                mode="w", encoding="utf-8", dir=os.path.dirname(self.filepath),
+                mode="w", encoding="utf-8", dir=dirpath,
                 prefix=".tmp_", suffix=".json", delete=False
             ) as tmp:
                 json.dump(self.data, tmp, indent=4, ensure_ascii=False)

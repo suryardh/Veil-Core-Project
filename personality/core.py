@@ -56,18 +56,22 @@ class PersonalityCore:
         return f"{identity.BASE_IDENTITY}\n\n{identity.LANGUAGE_RULES}\n\n{identity.BEHAVIOR_RULES}"
 
     def _route_tool(self, text: str) -> str | None:
+        _ok = lambda r: r is not None and r.success  # noqa: E731
         if _is_calculator(text):
-            result = with_retry(self.orch.run_tool, "calculator", text, max_retries=1)
+            result = with_retry(self.orch.run_tool, "calculator", text,
+                                max_retries=1, success_fn=_ok)
             if result and result.success:
                 return result.data.get("result", "")
             return None
         if _is_datetime(text):
-            result = with_retry(self.orch.run_tool, "datetime", max_retries=1)
+            result = with_retry(self.orch.run_tool, "datetime",
+                                max_retries=1, success_fn=_ok)
             if result and result.success:
                 return str(result.data)
             return None
         if _is_tavily(text):
-            result = with_retry(self.orch.run_tool, "tavily_usage", max_retries=1)
+            result = with_retry(self.orch.run_tool, "tavily_usage",
+                                max_retries=1, success_fn=_ok)
             if result and result.success:
                 return str(result.data.get("raw", ""))
             return None
@@ -115,12 +119,12 @@ class PersonalityCore:
 
         if new_mode is not None:
             if new_mode != self.state.emotional_mode and self.state.mode_strength > 0.5:
-                pass
+                pass  # Guard: mode kuat → tolak overwrite dari mode berbeda, biarkan decay dulu
             else:
                 self.state.emotional_mode = new_mode
                 self.state.mode_strength = min(1.0, self.state.mode_strength + 0.4)
         elif self.state.mode_strength > 0.15:
-            pass
+            pass  # Mode masih aktif (strength > 0.15) → biarkan decay alami tanpa reset ke neutral
         else:
             self.state.emotional_mode = "neutral"
             self.state.mode_strength = 0.0

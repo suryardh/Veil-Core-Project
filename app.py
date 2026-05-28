@@ -1,32 +1,12 @@
-import os
 import sys
 import config
-from core.agent import VeilAgent
+from core.setup import build_agent, register_tools
 from core.orchestrator import Orchestrator
 from personality.core import PersonalityCore
-from tools.web.search import WebSearchTool, WebExtractTool, TavilyUsageTool
-from tools.system.datetime import DateTimeTool
-from tools.system.calculator import CalculatorTool
 from utils.logger import log
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
-
-
-def build_agent():
-    if not os.path.exists(config.MODEL_PATH):
-        log.error("Model file not found: %s", config.MODEL_PATH)
-        log.error("Download Qwen2.5-3B-Instruct Q4_K_M GGUF and place it at %s", config.MODEL_PATH)
-        sys.exit(1)
-    return VeilAgent(config.MODEL_PATH)
-
-
-def register_tools(orch: Orchestrator):
-    orch.register_tool("web_search", WebSearchTool())
-    orch.register_tool("web_extract", WebExtractTool())
-    orch.register_tool("tavily_usage", TavilyUsageTool())
-    orch.register_tool("datetime", DateTimeTool())
-    orch.register_tool("calculator", CalculatorTool())
 
 
 def main():

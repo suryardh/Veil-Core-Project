@@ -1,3 +1,4 @@
+import os
 import sys
 import time
 import config
@@ -68,27 +69,29 @@ test("timezone is WIB", "WIB" in data, f"got: {data}")
 # ── 2. LONG-TERM MEMORY TESTS ─────────────────────────────────
 
 print("\n--- Long-Term Memory ---")
-ltm = LongTermMemory(filepath="logs/test_long_term.json")
-ltm.remember("hobi", "saya suka coding")
-data = ltm.store.get("facts", [])
-test("fact was stored", any("coding" in f["content"] for f in data))
-test("fact has timestamp", all("timestamp" in f for f in data))
-test("fact has importance", any(f.get("importance", 0) >= 1 for f in data))
+TEST_LTM_PATH = "logs/test_long_term.json"
+try:
+    ltm = LongTermMemory(filepath=TEST_LTM_PATH)
+    ltm.remember("hobi", "saya suka coding")
+    data = ltm.store.get("facts", [])
+    test("fact was stored", any("coding" in f["content"] for f in data))
+    test("fact has timestamp", all("timestamp" in f for f in data))
+    test("fact has importance", any(f.get("importance", 0) >= 1 for f in data))
 
-ltm.remember("hobi", "saya suka coding")
-data2 = ltm.store.get("facts", [])
-test("no duplicate stored", len(data2) == len(data))
+    ltm.remember("hobi", "saya suka coding")
+    data2 = ltm.store.get("facts", [])
+    test("no duplicate stored", len(data2) == len(data))
 
-fact = extract_fact("nama panggilan saya Rei")
-ltm.remember(fact["type"], fact["content"], importance=fact["importance"])
-data3 = ltm.store.get("facts", [])
-test("new fact stored", any("Rei" in f["content"] for f in data3))
-for f in data3:
-    if "Rei" in f["content"]:
-        test("importance 4 for personal facts", f.get("importance") == 4, f"got {f.get('importance')}")
-
-import os
-os.remove("logs/test_long_term.json")
+    fact = extract_fact("nama panggilan saya Rei")
+    ltm.remember(fact["type"], fact["content"], importance=fact["importance"])
+    data3 = ltm.store.get("facts", [])
+    test("new fact stored", any("Rei" in f["content"] for f in data3))
+    for f in data3:
+        if "Rei" in f["content"]:
+            test("importance 4 for personal facts", f.get("importance") == 4, f"got {f.get('importance')}")
+finally:
+    if os.path.exists(TEST_LTM_PATH):
+        os.remove(TEST_LTM_PATH)
 
 # ── 3. SHORT-TERM MEMORY OVERFLOW TESTS ──────────────────────
 
@@ -133,6 +136,12 @@ test("positive keren", r.valence > 0, f"val={r.valence}")
 r = analyze("aku ga peduli")
 test("ga peduli negative", r.valence < 0, f"val={r.valence}")
 
+r = analyze("tidak bahagia")
+test("tidak bahagia is negative", r.emotion == "negative" and r.valence < 0, f"emo={r.emotion} val={r.valence}")
+
+r = analyze("aku ga sayang kamu")
+test("ga sayang is negative", r.emotion == "negative" and r.valence < -0.3, f"emo={r.emotion} val={r.valence}")
+
 r = analyze("lagi bete nih")
 test("negative bete", r.valence < 0, f"val={r.valence}")
 
@@ -155,20 +164,24 @@ s2.update_from_interaction("intimate", 1.0, 0.95)
 test("intimate boosts stage", s2.stage_label() != "kenalan")
 
 print("\n--- Emotional Memory ---")
-em = EmotionalMemory(filepath="logs/test_emotional.json")
-em.record("interaction", "halo", 0.1, 0.1)
-test("salience filter", len(em.records) == 0)
+TEST_EM_PATH = "logs/test_emotional.json"
+try:
+    em = EmotionalMemory(filepath=TEST_EM_PATH)
+    em.record("interaction", "halo", 0.1, 0.1)
+    test("salience filter", len(em.records) == 0)
 
-em.record("interaction", "aku sayang kamu", 0.8, 0.8)
-test("record stored", len(em.records) == 1)
+    em.record("interaction", "aku sayang kamu", 0.8, 0.8)
+    test("record stored", len(em.records) == 1)
 
-em.record("interaction", "aku sayang kamu", 0.8, 0.8)
-test("recurrence merged", len(em.records) == 1 and em.records[0]["recurrence"] == 2)
+    em.record("interaction", "aku sayang kamu", 0.8, 0.8)
+    test("recurrence merged", len(em.records) == 1 and em.records[0]["recurrence"] == 2)
 
-summary = em.emotional_summary()
-test("summary is string", isinstance(summary, str))
-em.clear()
-os.remove("logs/test_emotional.json")
+    summary = em.emotional_summary()
+    test("summary is string", isinstance(summary, str))
+    em.clear()
+finally:
+    if os.path.exists(TEST_EM_PATH):
+        os.remove(TEST_EM_PATH)
 
 print("\n--- Orchestrator ---")
 orch = Orchestrator()

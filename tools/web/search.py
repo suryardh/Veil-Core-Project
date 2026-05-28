@@ -1,4 +1,5 @@
 import hashlib
+import threading
 import time
 
 import requests
@@ -76,24 +77,27 @@ def extract_urls(urls: str | list[str], query: str = "", extract_depth: str = "b
 
 
 class _CachedMixin:
-    """TTL cache mixin for tools."""
+    """TTL cache mixin for tools. Thread-safe via Lock."""
 
     def __init__(self):
         self._cache: dict = {}
+        self._cache_lock = threading.Lock()
 
     def _get_cached(self, key: str):
-        entry = self._cache.get(key)
-        if entry is None:
-            return None
-        if time.time() - entry["timestamp"] > CACHE_TTL:
-            del self._cache[key]
-            return None
-        return entry["value"]
+        with self._cache_lock:
+            entry = self._cache.get(key)
+            if entry is None:
+                return None
+            if time.time() - entry["timestamp"] > CACHE_TTL:
+                del self._cache[key]
+                return None
+            return entry["value"]
 
     def _set_cache(self, key: str, value):
-        if len(self._cache) >= config.WEB_SEARCH_CACHE_SIZE:
-            self._cache.pop(next(iter(self._cache)))
-        self._cache[key] = {"value": value, "timestamp": time.time()}
+        with self._cache_lock:
+            if len(self._cache) >= config.WEB_SEARCH_CACHE_SIZE:
+                self._cache.pop(next(iter(self._cache)))
+            self._cache[key] = {"value": value, "timestamp": time.time()}
 
 
 class WebSearchTool(BaseTool, _CachedMixin):

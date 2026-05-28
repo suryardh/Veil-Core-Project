@@ -1,8 +1,11 @@
 import json
 import os
+import tempfile
 import time
 from dataclasses import dataclass, field, asdict
 from typing import Any
+
+from utils.logger import log
 
 SALIENCE_THRESHOLD = 0.25
 RECURRENCE_WINDOW = 3600
@@ -37,9 +40,18 @@ class EmotionalMemory:
                 self.records = []
 
     def _save(self):
-        os.makedirs(os.path.dirname(self.filepath), exist_ok=True)
-        with open(self.filepath, "w", encoding="utf-8") as f:
-            json.dump(self.records, f, ensure_ascii=False, indent=2)
+        dirpath = os.path.dirname(os.path.abspath(self.filepath))
+        os.makedirs(dirpath, exist_ok=True)
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=dirpath,
+                prefix=".tmp_", suffix=".json", delete=False
+            ) as tmp:
+                json.dump(self.records, tmp, ensure_ascii=False, indent=2)
+                tmp_path = tmp.name
+            os.replace(tmp_path, self.filepath)
+        except Exception as exc:
+            log.warning("Failed to save emotional memory to %s: %s", self.filepath, exc)
 
     def record(self, type_: str, content: str, valence: float, arousal: float):
         record = EmotionalRecord(type=type_, content=content, valence=valence, arousal=arousal)

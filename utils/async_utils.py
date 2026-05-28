@@ -2,10 +2,22 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-def with_retry(fn, *args, max_retries=2, backoff=1.0, retryable=(Exception,), **kwargs):
+def with_retry(fn, *args, max_retries=2, backoff=1.0, retryable=(Exception,), success_fn=None, **kwargs):
+    """Retry wrapper.
+
+    Args:
+        success_fn: Optional callable yang menerima return value fn.
+                    Jika return False, retry dipicu (untuk soft failure
+                    seperti ToolResult.fail tanpa raise Exception).
+    """
     for attempt in range(max_retries + 1):
         try:
-            return fn(*args, **kwargs)
+            result = fn(*args, **kwargs)
+            if success_fn is not None and not success_fn(result):
+                if attempt < max_retries:
+                    time.sleep(backoff * (2 ** attempt))
+                    continue
+            return result
         except retryable:
             if attempt == max_retries:
                 raise

@@ -51,7 +51,7 @@ class Cognition:
         if not raw_result.success:
             return None
 
-        results = raw_result.data.get("results", [])
+        results = (raw_result.data or {}).get("results", [])
         if not results:
             return None
 

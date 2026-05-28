@@ -41,6 +41,9 @@ class LongTermMemory:
         if not facts:
             return "No long-term memories saved yet."
 
+        # Inisialisasi dulu agar closure _score() tidak UnboundLocalError
+        # jika semua kata dalam query ≤2 karakter
+        query_words: list[str] = []
         if query:
             query_words = [w.lower() for w in query.split() if len(w) > 2]
 

@@ -13,8 +13,6 @@ class Orchestrator:
         if not tool:
             return ToolResult.fail(f"Tool '{name}' tidak tersedia.")
         try:
-            if name == "datetime":
-                return tool()
             return tool(input_)
         except Exception as e:
             return ToolResult.fail(str(e))

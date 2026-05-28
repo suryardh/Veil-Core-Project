@@ -69,8 +69,7 @@ LEXICON: list[tuple[re.Pattern, str, float, float]] = [
     (re.compile(r"\binsecure\b"), "negative", -0.5, 0.5),
     (re.compile(r"\biri\b"), "negative", -0.4, 0.4),
     (re.compile(r"\bdengki\b"), "negative", -0.5, 0.5),
-    (re.compile(r"\bpergi\b"), "negative", -0.2, 0.3),
-    (re.compile(r"\bpergi\b.*\bsaja\b"), "negative", -0.4, 0.4),
+    (re.compile(r"\bpergi\b.*\bsaja\b"), "negative", -0.4, 0.4),  # "pergi saja" spesifik
     (re.compile(r"\btinggal\b"), "negative", -0.3, 0.3),
     (re.compile(r"\bpergilah\b"), "negative", -0.5, 0.5),
     (re.compile(r"\bgak sayang\b"), "negative", -0.7, 0.7),
@@ -93,6 +92,11 @@ INTENSIFIERS = [
     (re.compile(r"\?\?"), 0.2),
     (re.compile(r"[A-Z]{4,}"), 0.3),
 ]
+
+# Kata negasi eksplisit — bukan kata negatif, tapi kata yang membalik makna
+_NEGATION_WORDS = re.compile(
+    r"\b(tidak|ga|gak|nggak|enggak|bukan|tak|jangan|belum|kurang)\b"
+)
 
 
 @dataclass
@@ -119,7 +123,27 @@ def analyze(text: str) -> EmotionAnalysis:
     matched_emotions: list[str] = []
 
     for pattern, emotion, val, aro in LEXICON:
-        if pattern.search(lower):
+        match = pattern.search(lower)
+        if match:
+            # Cek apakah pattern ini sendiri merupakan pattern negasi eksplisit
+            is_explicit_neg = any(x in pattern.pattern for x in ["ga", "gak", "nggak", "tidak", "bukan", "tak"])
+            
+            # Cek apakah ada kata negasi yang mendahului match ini dalam kalimat (jarak 3 kata)
+            pre_text = lower[:match.start()].strip()
+            has_pre_negation = False
+            if pre_text:
+                pre_words = pre_text.split()
+                recent_pre_words = pre_words[-3:]
+                has_pre_negation = any(_NEGATION_WORDS.search(w) for w in recent_pre_words)
+            
+            if has_pre_negation and not is_explicit_neg:
+                # Balikkan sentimen jika didahului negasi
+                val = -val * 0.8
+                if emotion in ("positive", "intimate"):
+                    emotion = "negative"
+                elif emotion == "negative":
+                    emotion = "positive"
+
             matched_valences.append(val)
             matched_arousals.append(aro)
             matched_emotions.append(emotion)
@@ -136,8 +160,8 @@ def analyze(text: str) -> EmotionAnalysis:
         if pattern.search(text):
             arousal_boost += boost
 
-    negation_patterns = [p for p, e, _, _ in LEXICON if e == "negative"]
-    has_negation = any(p.search(lower) for p in negation_patterns)
+    # Cek kata negasi eksplisit (tidak/ga/gak/nggak/...) — bukan kata negatif
+    has_negation = bool(_NEGATION_WORDS.search(lower))
 
     if matched_valences:
         avg_val = sum(matched_valences) / len(matched_valences)

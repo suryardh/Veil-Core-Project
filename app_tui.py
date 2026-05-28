@@ -1,13 +1,9 @@
-import os
 import sys
 
 import config
-from core.agent import VeilAgent
+from core.setup import build_agent, register_tools
 from core.orchestrator import Orchestrator
 from personality.core import PersonalityCore
-from tools.web.search import WebSearchTool, WebExtractTool, TavilyUsageTool
-from tools.system.datetime import DateTimeTool
-from tools.system.calculator import CalculatorTool
 from utils.logger import log
 
 from rich.console import Console
@@ -21,22 +17,6 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 console = Console()
-
-
-def build_agent():
-    if not os.path.exists(config.MODEL_PATH):
-        log.error("Model file not found: %s", config.MODEL_PATH)
-        log.error("Download Qwen2.5-3B-Instruct Q4_K_M GGUF and place it at %s", config.MODEL_PATH)
-        sys.exit(1)
-    return VeilAgent(config.MODEL_PATH)
-
-
-def register_tools(orch: Orchestrator):
-    orch.register_tool("web_search", WebSearchTool())
-    orch.register_tool("web_extract", WebExtractTool())
-    orch.register_tool("tavily_usage", TavilyUsageTool())
-    orch.register_tool("datetime", DateTimeTool())
-    orch.register_tool("calculator", CalculatorTool())
 
 
 def _state_text(state) -> str:
@@ -64,17 +44,18 @@ def main():
 
     history: list[tuple[str, str]] = []
 
+    # Buat layout sekali di luar loop — hanya update konten per turn (BUG-MN2 fix)
+    layout = Layout()
+    layout.split_column(
+        Layout(name="header", size=3),
+        Layout(name="body", ratio=1),
+    )
+
     try:
         while True:
             opener = core.initiative_cue()
             if opener:
                 history.append(("Stella", opener))
-
-            layout = Layout()
-            layout.split_column(
-                Layout(name="header", size=3),
-                Layout(name="body", ratio=1),
-            )
 
             color = _mood_color(core.state)
             header_text = Text()
