@@ -8,7 +8,15 @@ python-dotenv
 
 # --- LLM Inference ---
 # llm/engine.py
+# GPU mode: pip install llama-cpp-python==0.3.25 --extra-index-url https://github.com/abetlen/llama-cpp-python/releases
+# CPU mode: pip install llama-cpp-python
 llama-cpp-python
+
+# --- GPU Runtime ---
+# Required for GPU mode (llama-cpp-python CUDA wheels need CUDA DLLs at import)
+# CPU mode: skip these
+nvidia-cublas-cu12
+nvidia-cuda-runtime-cu12
 
 # --- HTTP / Web Search ---
 # tools/web/search.py

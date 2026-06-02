@@ -147,14 +147,14 @@ test("negative bete", r.valence < 0, f"val={r.valence}")
 
 print("\n--- State Management ---")
 s = StellaState()
-test("default stage kenalan", s.stage_label() == "kenalan")
-test("default mood neutral", s.dominant_mood() == "neutral")
+test("default stage sayang", s.stage_label() == "sayang")
+test("default mood yearning", s.dominant_mood() == "yearning")
 
 s.update_from_interaction("positive", 0.8, 0.9)
 test("affection increased", s.affection > 0)
 
 s.update_from_interaction("negative", 0.9, 0.9)
-test("trust decreased", s.trust < 0.33)
+test("trust decreased after negative", s.trust < 0.8)
 
 s3 = StellaState()
 s3.affection = 0.5

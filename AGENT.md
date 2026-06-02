@@ -124,14 +124,14 @@ class StellaIdentity:
 ```python
 @dataclass
 class StellaState:
-    affection: float      # 0.0 → 1.0
-    trust: float = 0.35   # 0.0 → 1.0; 0.35 prevents premature guarded
-    attachment: float     # 0.0 → 1.0
-    comfort: float        # 0.0 → 1.0
-    dependency: float     # 0.0 → 1.0
-    baseline_mood: str    # "warm" | "subdued" | "neutral" (from trailing 5 emotional records)
-    emotional_mode: str   # "comforting" | "withdrawn" | "yearning" | "excited" | "soft" | "neutral"
-    mode_strength: float  # 0.0 → 1.0; decays ×0.85/turn; resists overwrite when > 0.5
+    affection: float = 0.7   # 0.0 → 1.0; romantic start
+    trust: float = 0.8       # 0.0 → 1.0; romantic start
+    attachment: float = 0.5  # 0.0 → 1.0; romantic start
+    comfort: float = 0.7     # 0.0 → 1.0; romantic start
+    dependency: float = 0.4  # 0.0 → 1.0; romantic start
+    baseline_mood: str = "warm"       # "warm" | "subdued" | "neutral"
+    emotional_mode: str = "yearning"  # "comforting" | "withdrawn" | "yearning" | "excited" | "soft" | "neutral"
+    mode_strength: float = 0.5  # 0.0 → 1.0; decays ×0.85/turn; resists overwrite when > 0.5
 ```
 
 ### State update rules
@@ -147,7 +147,7 @@ Each dimension decays at a different rate per turn:
 - `comfort *= 0.997` — fades quickest
 - Prevents permanent maxed state
 
-### Stage label (derived, not linear)
+### Stage label (derived, not used in prompts — personality is always romantic)
 ```python
 combined = (affection + trust*0.8 + attachment*0.6 + comfort*0.4 + dependency*0.3) / 3.1
 # < 0.2 = kenalan
@@ -155,6 +155,7 @@ combined = (affection + trust*0.8 + attachment*0.6 + comfort*0.4 + dependency*0.
 # < 0.6 = dekat
 # < 0.8 = sayang
 # >= 0.8 = istimewa
+# With romantic defaults (0.7/0.8/0.5/0.7/0.4) → "sayang"
 ```
 
 ### Mood (emergent)
@@ -512,7 +513,7 @@ flowchart LR
 | Tool visibility | `=== Planner execution ===` | Never visible |
 | Orchestrator role | Coordinator + personality | Pure infra boundary |
 | State management | SessionState + ref resolution | Relationship state + emotional memory |
-| Test count | 30 | 43 (all passing) |
+| Test count | 30 | 45 (all passing) |
 
 ---
 
@@ -580,7 +581,7 @@ flowchart LR
 - CoRT analysis (51 bugs identified: 5 high, 12 medium, 34 low — all high+medium fixed)
 - Post-CoRT improvements: lexicon enriched (30+ words), scoring-based recall, tool retry, schema migration registry
 - TUI with rich (split-panel, emotional state display, colored history)
-- Automated testing (43 assertions passing)
+- Automated testing (45 assertions passing)
 
 ## Recent Fixes (May 2026)
 - **agent.py**: Observation loss between turns fixed — augmented input stored in history
@@ -609,6 +610,18 @@ flowchart LR
 - **memory/long_term.py**: Scoring-based recall — `match_ratio × 0.7 + importance_norm × 0.3`, top 10 results (was binary filter + 5+5 quota)
 - **app_tui.py**: Rich-based split-panel TUI with emotional state header, colored conversation history, input prompt
 - **requirements.txt**: Added `rich` dependency
+
+### June 2026 — GPU Acceleration & Personality Overhaul
+- **config.py**: Added `USE_GPU` flag (reads `VEIL_USE_GPU` env var, default "1")
+- **engine.py**: Dual CPU/GPU mode — `n_gpu_layers=-1` when GPU enabled; CUDA DLL path setup via `os.add_dll_directory()`
+- **state.py**: Romantic initial values (affection 0.7, trust 0.8, attachment 0.5, comfort 0.7, dependency 0.4); default mood "warm", emotional mode "yearning"
+- **stella.py**: Identity changed to "his affectionate companion"; behavior rules prioritize using info user provided
+- **prompting.py**: Removed stage from `describe_state()`; updated mood/mode descriptions to romantic
+- **core.py**: Reordered routing — cognition tried **before** tool routing (prevents "hari ini" from stealing search queries)
+- **cognition.py**: `_summarize()` includes Tavily `answer` (no prefix); limits to 3 results
+- **search.py**: `include_answer: True`, `search_depth: advanced` for richer results
+- **agent.py**: Removed `User:` prefix from user messages; removed `=== Search Results ===` delimiter; fixed truncation budget (mixing token+char → pure char)
+- **test_agent.py**: Updated for romantic defaults (all 45 passing)
 
 ## In Progress
 - Emotional depth (arcs, attachment, conflict)

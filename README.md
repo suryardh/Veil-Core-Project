@@ -17,7 +17,6 @@ beyond an agent with personality
 
 - **Emotion analysis** — keyword-based valence/arousal detection from user input
 - **Relationship state** — 5-dimensional dynamic model (affection, trust, attachment, comfort, dependency)
-- **Stage progression** — "kenalan" → "akrab" → "dekat" → "sayang" → "istimewa" (non-linear, derived from state)
 - **Mood modulation** — warm, playful, guarded, yearning, neutral — shifts naturally per interaction
 - **State decay** — prevents relationship from being permanently maxed out
 - **Emotional mode** — comforting/withdrawn/yearning/excited/soft with mode_strength; resists overwrite when > 0.5
@@ -48,7 +47,7 @@ Tools are executed **invisibly** behind the personality layer. Users see natural
 | `calculator` | Safe eval — math + percentage + functions (sqrt, sin, cos), injection blocked |
 | `datetime` | WIB Indonesian locale |
 
-Tool routing runs **before** cognition — calculator/datetime/tavily always take priority over web search.
+Tool routing runs **after** cognition — cognition tried first, then tool routing for calculator/datetime/tavily. This prevents "hari ini" (datetime trigger) from stealing search queries.
 
 ## Cognition (Subconscious)
 
@@ -57,11 +56,13 @@ Tool routing runs **before** cognition — calculator/datetime/tavily always tak
 - Triggered automatically when factuality is needed
 - Results injected as natural context, not raw execution output
 - Search query auto-cleaned: `"halo, cari kurs dollar"` → `"kurs dollar"`
+- Uses Tavily `include_answer` + `search_depth=advanced` for richer results (AI answer + 3 snippets)
+- Results injected as natural continuation in user message (no `=== Search Results ===` delimiter)
 
 ## TUI (Optional)
 
 A rich-based split-panel TUI is available via `app_tui.py`:
-- Emotional state header (mood, trust, attachment, stage)
+- Emotional state header (mood, trust, attachment)
 - Scrollable color-coded conversation history (green=user, cyan=Stella)
 - Clean input prompt
 
@@ -80,13 +81,14 @@ flowchart TB
     Analyzer --> State["state.py\nrelationship update + decay"]
     State --> Emotional["emotional.py\nmemory record"]
 
-    Emotional --> Route{"tool\nneeded?"}
+    Emotional --> Dec{"cognition?"}
+    Dec -->|yes| Cognition["cognition.py\nsearch → extract → summarize"]
+    Dec -->|no| Route{"tool\nneeded?"}
     Route -->|calc/datetime/tavily| Tool["_route_tool()\ninline execution"]
-    Route -->|cognition trigger| Cognition["cognition.py\nsearch → extract → summarize"]
     Route -->|neither| Direct["direct chat"]
 
-    Tool --> Prompt["prompting.py\nstate → nat lang + compose"]
-    Cognition --> Prompt
+    Cognition --> Prompt["prompting.py\nstate → nat lang + compose"]
+    Tool --> Prompt
     Direct --> Prompt
 
     Prompt --> Agent["Agent.generate()\nQwen Instruct format"]
@@ -157,7 +159,6 @@ Veil/
 │   └── async_utils.py          ← with_retry (used by search)
 │
 ├── requirements.txt
-├── .env.example
 ├── README.md
 └── AGENT.md
 ```
@@ -190,6 +191,14 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### GPU Acceleration (optional, NVIDIA CUDA)
+
+For RTX 4050 / CUDA-equipped GPUs — install the CUDA-enabled llama-cpp-python wheel:
+```bash
+pip install llama-cpp-python==0.3.25 --extra-index-url https://github.com/abetlen/llama-cpp-python/releases
+```
+Then ensure `VEIL_USE_GPU=1` (default in `.env` or environment).
+
 ---
 
 # Model Setup
@@ -215,9 +224,11 @@ Main config in `config.py`:
 - Max tokens: 300 (normal), 400 (stream)
 - Memory limits
 - Search timeout & cache size
+- GPU mode toggle (`USE_GPU`)
 
 Environment overrides:
 ```bash
+USE_GPU=1              # GPU mode (default) | 0 = CPU-only
 VEIL_TEMP=0.9
 TAVILY_API_KEY=tvly-...
 ```
@@ -249,12 +260,12 @@ python test_agent.py
 python app_tui.py
 ```
 
-43 tests (passing):
+45 tests (passing):
 - calculator (6)
 - datetime (4)
 - long-term memory (6)
 - short-term memory (4)
-- emotional analysis (9)
+- emotional analysis (11)
 - state management (6)
 - emotional memory (4)
 - orchestrator (1)
