@@ -156,8 +156,10 @@ test("affection increased", s.affection > 0)
 s.update_from_interaction("negative", 0.9, 0.9)
 test("trust decreased", s.trust < 0.33)
 
-s.decay()
-test("decay reduces affection", s.affection <= 0.04)
+s3 = StellaState()
+s3.affection = 0.5
+s3.decay()
+test("decay reduces affection", 0 < s3.affection < 0.5)
 
 s2 = StellaState()
 s2.update_from_interaction("intimate", 1.0, 0.95)

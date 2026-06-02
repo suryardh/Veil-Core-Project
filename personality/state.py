@@ -6,11 +6,11 @@ from typing import Any
 
 @dataclass
 class StellaIdentity:
-    humor: float = 0.7
-    warmth: float = 0.8
-    teasing: float = 0.5
-    emotional_openness: float = 0.6
-    protectiveness: float = 0.7
+    humor: float = 0.6
+    warmth: float = 0.9
+    teasing: float = 0.6
+    emotional_openness: float = 0.8
+    protectiveness: float = 0.8
 
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items()}
@@ -18,15 +18,15 @@ class StellaIdentity:
 
 @dataclass
 class StellaState:
-    affection: float = 0.0
-    trust: float = 0.35
-    attachment: float = 0.0
-    comfort: float = 0.5
-    dependency: float = 0.0
+    affection: float = 0.7
+    trust: float = 0.8
+    attachment: float = 0.5
+    comfort: float = 0.7
+    dependency: float = 0.4
     last_interaction_ts: float = 0.0
-    baseline_mood: str = "neutral"
-    emotional_mode: str = "neutral"
-    mode_strength: float = 0.0
+    baseline_mood: str = "warm"
+    emotional_mode: str = "yearning"
+    mode_strength: float = 0.5
 
     _decay_rates: dict = field(default_factory=lambda: {
         "affection": 0.998,
@@ -77,15 +77,15 @@ class StellaState:
         return "istimewa"
 
     def dominant_mood(self) -> str:
+        if self.affection > 0.6 and self.attachment > 0.4:
+            return "yearning"
         if self.affection > 0.7 and self.comfort > 0.7:
             return "warm"
         if self.affection > 0.5 and self.trust > 0.6:
             return "playful"
         if self.comfort < 0.3 or self.trust < 0.3:
             return "guarded"
-        if self.attachment > 0.7 and self.dependency > 0.5:
-            return "yearning"
-        return "neutral"
+        return "warm"
 
     def to_dict(self) -> dict:
         return {
@@ -103,13 +103,13 @@ class StellaState:
     @classmethod
     def from_dict(cls, data: dict) -> StellaState:
         return cls(
-            affection=float(data.get("affection", 0.0)),
-            trust=float(data.get("trust", 0.35)),
-            attachment=float(data.get("attachment", 0.0)),
-            comfort=float(data.get("comfort", 0.5)),
-            dependency=float(data.get("dependency", 0.0)),
+            affection=float(data.get("affection", 0.7)),
+            trust=float(data.get("trust", 0.8)),
+            attachment=float(data.get("attachment", 0.5)),
+            comfort=float(data.get("comfort", 0.7)),
+            dependency=float(data.get("dependency", 0.4)),
             last_interaction_ts=float(data.get("last_interaction_ts", 0.0)),
-            baseline_mood=str(data.get("baseline_mood", "neutral")),
-            emotional_mode=str(data.get("emotional_mode", "neutral")),
-            mode_strength=float(data.get("mode_strength", 0.0)),
+            baseline_mood=str(data.get("baseline_mood", "warm")),
+            emotional_mode=str(data.get("emotional_mode", "yearning")),
+            mode_strength=float(data.get("mode_strength", 0.5)),
         )

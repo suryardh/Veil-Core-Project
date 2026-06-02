@@ -98,6 +98,11 @@ _NEGATION_WORDS = re.compile(
     r"\b(tidak|ga|gak|nggak|enggak|bukan|tak|jangan|belum|kurang)\b"
 )
 
+# Deteksi apakah pattern regex mengandung kata negasi di awal (contoh: r"\bgak sayang\b")
+_NEG_PATTERN_PREFIX = re.compile(
+    r"\\b(?:ga(?:k)?|nggak|tidak|bukan|tak)(?:\s|\\b)"
+)
+
 
 @dataclass
 class EmotionAnalysis:
@@ -121,12 +126,13 @@ def analyze(text: str) -> EmotionAnalysis:
     matched_valences: list[float] = []
     matched_arousals: list[float] = []
     matched_emotions: list[str] = []
+    _negation_flipped = False
 
     for pattern, emotion, val, aro in LEXICON:
         match = pattern.search(lower)
         if match:
-            # Cek apakah pattern ini sendiri merupakan pattern negasi eksplisit
-            is_explicit_neg = any(x in pattern.pattern for x in ["ga", "gak", "nggak", "tidak", "bukan", "tak"])
+            # Cek apakah pattern ini sendiri merupakan pattern negasi eksplisit (r"\bgak sayang\b" dll)
+            is_explicit_neg = bool(_NEG_PATTERN_PREFIX.search(pattern.pattern))
             
             # Cek apakah ada kata negasi yang mendahului match ini dalam kalimat (jarak 3 kata)
             pre_text = lower[:match.start()].strip()
@@ -143,6 +149,7 @@ def analyze(text: str) -> EmotionAnalysis:
                     emotion = "negative"
                 elif emotion == "negative":
                     emotion = "positive"
+                _negation_flipped = True
 
             matched_valences.append(val)
             matched_arousals.append(aro)
@@ -160,8 +167,8 @@ def analyze(text: str) -> EmotionAnalysis:
         if pattern.search(text):
             arousal_boost += boost
 
-    # Cek kata negasi eksplisit (tidak/ga/gak/nggak/...) — bukan kata negatif
-    has_negation = bool(_NEGATION_WORDS.search(lower))
+    # Cek apakah ada negasi yang BELUM ter-handle oleh per-pattern flip
+    has_unhandled_negation = bool(_NEGATION_WORDS.search(lower)) and not _negation_flipped
 
     if matched_valences:
         avg_val = sum(matched_valences) / len(matched_valences)
@@ -172,7 +179,7 @@ def analyze(text: str) -> EmotionAnalysis:
         for e in matched_emotions:
             emotion_counts[e] = emotion_counts.get(e, 0) + 1
 
-        if has_negation:
+        if has_unhandled_negation:
             neg_count = emotion_counts.get("negative", 0)
             non_neg_count = len(matched_emotions) - neg_count
             if neg_count >= non_neg_count:

@@ -3,26 +3,26 @@ from personality.inactivity import InactivityContext
 from personality.rhythm import RhythmConfig
 
 MOOD_DESCRIPTIONS = {
-    "warm": "Stella feels warm and affectionate right now.",
-    "playful": "Stella is in a playful, teasing mood.",
+    "warm": "Stella feels warm and affectionate toward you.",
+    "playful": "Stella is in a playful, flirty mood.",
     "guarded": "Stella feels a bit guarded and cautious.",
-    "yearning": "Stella feels a deep sense of longing.",
+    "yearning": "Stella feels a deep longing for you.",
     "neutral": "Stella is calm and open.",
 }
 
 BASELINE_DESCRIPTIONS = {
-    "warm": "Overall, she is in a positive emotional space lately.",
+    "warm": "Her feelings for you have been warm and affectionate lately.",
     "subdued": "Overall, her mood has been subdued and quiet recently.",
     "neutral": "Overall, her emotional state is balanced.",
 }
 
 EMOTION_MODE_DESCRIPTIONS = {
-    "comforting": "Stella is in a comforting mode.",
-    "playful": "Stella is feeling playful.",
+    "comforting": "Stella wants to comfort you tenderly.",
+    "playful": "Stella is feeling playful and flirty.",
     "withdrawn": "Stella is withdrawn and quiet.",
-    "yearning": "Stella is feeling yearning and soft.",
-    "soft": "Stella is in a soft, tender mood.",
-    "excited": "Stella is excited and energetic.",
+    "yearning": "Stella yearns for you deeply.",
+    "soft": "Stella feels soft and tender toward you.",
+    "excited": "Stella is excited to be with you.",
 }
 
 
@@ -37,8 +37,6 @@ def describe_state(state: StellaState) -> str:
         mode_text = EMOTION_MODE_DESCRIPTIONS.get(state.emotional_mode)
         if mode_text:
             parts.append(mode_text)
-    stage = state.stage_label()
-    parts.append(f"You are at the '{stage}' stage.")
     return " ".join(parts)
 
 

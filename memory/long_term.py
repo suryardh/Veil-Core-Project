@@ -39,7 +39,7 @@ class LongTermMemory:
     def get_relevant_facts(self, query: str = None) -> str:
         facts = self.store.get("facts", [])
         if not facts:
-            return "No long-term memories saved yet."
+            return "Belum ada memori jangka panjang yang disimpan."
 
         # Inisialisasi dulu agar closure _score() tidak UnboundLocalError
         # jika semua kata dalam query ≤2 karakter

@@ -21,7 +21,7 @@ CALC_PATTERNS = [
     re.compile(r"\d+\s*%\s*(?:dari)?\s*\d+"),
 ]
 
-_DATETIME_TRIGGERS = ["jam berapa", "tanggal berapa", "hari ini", "sekarang jam", "what time", "what date", "current time", "current date"]
+_DATETIME_TRIGGERS = ["jam berapa", "tanggal berapa", "sekarang jam", "what time", "what date"]
 
 _TAVILY_TRIGGERS = ["cek usage", "cek tavily", "tavily usage", "sisa usage", "penggunaan api"]
 
@@ -124,10 +124,10 @@ class PersonalityCore:
                 self.state.emotional_mode = new_mode
                 self.state.mode_strength = min(1.0, self.state.mode_strength + 0.4)
         elif self.state.mode_strength > 0.15:
-            pass  # Mode masih aktif (strength > 0.15) → biarkan decay alami tanpa reset ke neutral
+            pass
         else:
-            self.state.emotional_mode = "neutral"
-            self.state.mode_strength = 0.0
+            self.state.emotional_mode = "yearning"
+            self.state.mode_strength = 0.3
 
     def initiative_cue(self, inactivity_ctx: InactivityContext | None = None) -> str | None:
         now = time.time()
@@ -165,17 +165,15 @@ class PersonalityCore:
             return reaction.text
 
         cognition_context = ""
-        is_emotional = abs(analysis.valence) > 0.4 and analysis.arousal > 0.5
-        if is_emotional:
-            pass
-        else:
-            tool_result = self._route_tool(user_input)
-            if tool_result:
-                cognition_context = tool_result
-            elif Cognition.can_handle(user_input):
+        if not (abs(analysis.valence) > 0.4 and analysis.arousal > 0.5):
+            if Cognition.can_handle(user_input):
                 result = self.cognition.process(user_input)
                 if result:
                     cognition_context = result
+            if not cognition_context:
+                tool_result = self._route_tool(user_input)
+                if tool_result:
+                    cognition_context = tool_result
 
         self.state.last_interaction_ts = now
         save_state(self.state)

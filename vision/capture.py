@@ -1,0 +1,1 @@
+"""Stub — screen capture not yet implemented (Phase 6+ roadmap)."""

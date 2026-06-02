@@ -1,0 +1,1 @@
+"""Stub — screen activity context not yet implemented (Phase 6+ roadmap)."""

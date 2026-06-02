@@ -16,18 +16,18 @@ def _clean(text: str) -> str:
     return text.strip()
 
 
-def _summarize(results: list[dict]) -> str:
-    if not results:
-        return ""
+def _summarize(results: list[dict], answer: str = "") -> str:
     parts = []
+    if answer:
+        parts.append(_clean(answer[:500]))
     for r in results[:3]:
         title = _clean(r.get("title", ""))
-        snippet = _clean(r.get("snippet", r.get("content", ""))[:200])
+        snippet = _clean(r.get("snippet", r.get("content", ""))[:300])
         if title and snippet:
             parts.append(f"- {title}: {snippet}")
         elif snippet:
             parts.append(f"- {snippet}")
-    return "\n".join(parts)
+    return "\n".join(parts) if parts else ""
 
 
 class Cognition:
@@ -51,9 +51,15 @@ class Cognition:
         if not raw_result.success:
             return None
 
-        results = (raw_result.data or {}).get("results", [])
-        if not results:
+        data = raw_result.data or {}
+        results = data.get("results", [])
+        answer = data.get("answer", "")
+
+        if not results and not answer:
             return None
+
+        if answer:
+            return _summarize(results, answer)
 
         urls = [r["url"] for r in results if r.get("url")]
         if urls and extract_fn is not None:
@@ -62,7 +68,7 @@ class Cognition:
             if extract_result.success:
                 extracted = extract_result.data.get("results", [])
                 if extracted:
-                    content = extracted[0].get("content", "")[:300]
+                    content = extracted[0].get("content", "")[:500]
                     if content:
                         return content
 

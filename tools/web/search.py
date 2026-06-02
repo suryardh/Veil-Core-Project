@@ -23,14 +23,14 @@ def _api_key() -> str:
     return key
 
 
-def _search(query: str) -> list[dict]:
+def _search(query: str) -> tuple[list[dict], str]:
     resp = requests.post(
         f"{TAVILY_API_BASE}/search",
         json={
             "query": query,
-            "search_depth": "basic",
+            "search_depth": "advanced",
             "max_results": 5,
-            "include_answer": False,
+            "include_answer": True,
         },
         headers={"Authorization": f"Bearer {_api_key()}"},
         timeout=config.SEARCH_TIMEOUT,
@@ -45,9 +45,10 @@ def _search(query: str) -> list[dict]:
             "url": r.get("url", ""),
             "snippet": r.get("content", ""),
         })
+    answer = data.get("answer", "") or ""
     if not out:
         raise RuntimeError("tidak ada hasil")
-    return out
+    return out, answer
 
 
 def check_usage() -> dict:
@@ -151,9 +152,10 @@ class WebSearchTool(BaseTool, _CachedMixin):
             return ToolResult.ok(cached, "tavily")
 
         try:
-            results = with_retry(_search, query, max_retries=1, backoff=1.0)
-            self._set_cache(cache_key, {"query": query, "results": results})
-            return ToolResult.ok({"query": query, "results": results}, "tavily")
+            results, answer = with_retry(_search, query, max_retries=1, backoff=1.0)
+            data = {"query": query, "results": results, "answer": answer}
+            self._set_cache(cache_key, data)
+            return ToolResult.ok(data, "tavily")
         except Exception:
             return ToolResult.fail(_SEARCH_ERR, "tavily")
 

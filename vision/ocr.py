@@ -1,0 +1,1 @@
+"""Stub — OCR not yet implemented (Phase 6+ roadmap)."""

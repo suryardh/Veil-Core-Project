@@ -41,13 +41,18 @@ class VeilAgent:
             text = pattern.sub(replacement, text)
         return text.strip()
 
+    @staticmethod
+    def _build_full_input(user_input: str, observation: str = "") -> str:
+        full_input = user_input
+        if observation:
+            full_input += f"\n\n{observation[:500]}"
+        return full_input
+
     def _build_prompt(self, system: str, user_input: str, observation: str = "") -> str:
         history = self._format_history_as_chat()
         history = self._truncate(history, config.CTX_BUDGET_HISTORY)
         sep = "\n" if history else ""
-        full_input = f"User: {user_input}"
-        if observation:
-            full_input += f"\n\nHasil pencarian:\n{observation[:300]}"
+        full_input = self._build_full_input(user_input, observation)
         return (
             f"<|im_start|>system\n{system}<|im_end|>\n"
             f"{history}{sep}"
@@ -57,12 +62,11 @@ class VeilAgent:
 
     def generate(self, system: str, user_input: str, observation: str = "") -> str:
         prompt = self._build_prompt(system, user_input, observation)
-        prompt = self._truncate(prompt, config.N_CTX - config.CTX_BUDGET_RESPONSE)
+        budget = config.CTX_BUDGET_SYSTEM + config.CTX_BUDGET_HISTORY + len(user_input) + 500
+        prompt = self._truncate(prompt, budget)
         response = self.llm.generate(prompt)
         response = self._clean_response(response)
-        full_input = f"User: {user_input}"
-        if observation:
-            full_input += f"\n\nHasil pencarian:\n{observation[:300]}"
+        full_input = self._build_full_input(user_input, observation)
         self.short_memory.add_message("user", full_input)
         self.short_memory.add_message("assistant", response)
         return response
@@ -74,5 +78,5 @@ class VeilAgent:
             full_response += token
             yield token
         full_response = self._clean_response(full_response)
-        self.short_memory.add_message("user", f"User: {user_input}")
+        self.short_memory.add_message("user", user_input)
         self.short_memory.add_message("assistant", full_response)

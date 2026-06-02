@@ -1,3 +1,4 @@
+"""Legacy ToolRegistry — not used by main code. Use tools/base.py and core/orchestrator.py instead."""
 from typing import Any
 from tools.base import BaseTool
 

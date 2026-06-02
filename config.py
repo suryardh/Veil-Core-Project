@@ -10,6 +10,7 @@ except ImportError:
 MODEL_PATH = os.path.join("models", "qwen2.5-3b-instruct-q4_k_m.gguf")
 N_CTX = 4096
 N_THREADS = max(1, (os.cpu_count() or 4) // 2)
+USE_GPU = os.getenv("VEIL_USE_GPU", "1") == "1"
 
 # --- Inference Parameters ---
 SAMPLING = {
