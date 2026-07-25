@@ -1,9 +1,5 @@
 import sys
-
-import config
-from core.setup import build_agent, register_tools
-from core.orchestrator import Orchestrator
-from personality.core import PersonalityCore
+from core.bootstrap import create_core_components
 from utils.logger import log
 
 from rich.console import Console
@@ -18,7 +14,6 @@ if hasattr(sys.stdout, "reconfigure"):
 
 console = Console()
 
-
 def _state_text(state) -> str:
     mood = state.dominant_mood()
     mode = state.emotional_mode if state.mode_strength > 0.15 else ""
@@ -27,7 +22,6 @@ def _state_text(state) -> str:
         parts.insert(1, f"mode: {mode}")
     return "  |  ".join(parts)
 
-
 def _mood_color(state) -> str:
     if state.baseline_mood == "warm":
         return "bright_magenta"
@@ -35,22 +29,17 @@ def _mood_color(state) -> str:
         return "blue"
     return "cyan"
 
-
 def main():
-    agent = build_agent()
-    orch = Orchestrator()
-    register_tools(orch)
-    core = PersonalityCore(agent, orch)
-
+    agent, orch, core = create_core_components()
     history: list[tuple[str, str]] = []
 
-    # Buat layout sekali di luar loop — hanya update konten per turn (BUG-MN2 fix)
     layout = Layout()
     layout.split_column(
         Layout(name="header", size=3),
         Layout(name="body", ratio=1),
     )
 
+    log.info("Veil online (TUI).")
     try:
         while True:
             opener = core.initiative_cue()
@@ -93,7 +82,6 @@ def main():
         log.info("Shutdown by user.")
     except Exception as e:
         log.exception("Unhandled error: %s", e)
-
 
 if __name__ == "__main__":
     main()

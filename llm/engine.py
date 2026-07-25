@@ -20,11 +20,12 @@ _setup_cuda_paths()
 
 from llama_cpp import Llama
 
-CLEANUP_PATTERNS = [
-    (re.compile(r"<\|im_start\|>\s*(?:assistant|user|system)?", re.I), ""),
-    (re.compile(r"<\|im_end\|>"), ""),
-    (re.compile(r"^\s*(?:assistant|user|system)\s*", re.I), ""),
-]
+# Moved to utils/text.py
+# CLEANUP_PATTERNS = [
+#     (re.compile(r"<|im_start|>\s*(?:assistant|user|system)?", re.I), ""),
+#     (re.compile(r"<|im_end|>"), ""),
+#     (re.compile(r"^\s*(?:assistant|user|system)\s*", re.I), ""),
+# ]
 
 
 class LLMEngine:
@@ -49,14 +50,15 @@ class LLMEngine:
         params.update(kwargs)
         return params
 
-    @staticmethod
-    def _sanitize(text):
-        text = text.strip()
-        if "<|im_end|>" in text:
-            text = text.split("<|im_end|>")[0]
-        for pattern, replacement in CLEANUP_PATTERNS:
-            text = pattern.sub(replacement, text)
-        return text.strip()
+    # Moved to utils/text.py
+    # @staticmethod
+    # def _sanitize(text):
+    #     text = text.strip()
+    #     if "<|im_end|>" in text:
+    #         text = text.split("<|im_end|>")[0]
+    #     for pattern, replacement in CLEANUP_PATTERNS:
+    #         text = pattern.sub(replacement, text)
+    #     return text.strip()
 
     @staticmethod
     def _sanitize_token(token):
@@ -73,5 +75,6 @@ class LLMEngine:
     def generate(self, prompt, **kwargs):
         params = self._default_params(stream=False, **kwargs)
         response = self.model(prompt, **params)
-        return self._sanitize(response["choices"][0]["text"])
-
+        # return self._sanitize(response["choices"][0]["text"])
+        from utils.text import sanitize_llm_output # Import locally to avoid circular dependencies
+        return sanitize_llm_output(response["choices"][0]["text"])

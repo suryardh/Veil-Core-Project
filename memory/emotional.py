@@ -1,11 +1,10 @@
 import json
 import os
-import tempfile
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Any
 
-from utils.logger import log
+from memory.store import JSONStore
 
 SALIENCE_THRESHOLD = 0.25
 RECURRENCE_WINDOW = 3600
@@ -28,30 +27,21 @@ class EmotionalRecord:
 class EmotionalMemory:
     def __init__(self, filepath: str = ""):
         self.filepath = filepath or os.path.join("logs", "emotional_memory.json")
-        self.records: list[dict] = []
-        self._load()
+        self.store = JSONStore(self.filepath)
 
-    def _load(self):
-        if os.path.exists(self.filepath):
-            try:
-                with open(self.filepath, "r", encoding="utf-8") as f:
-                    self.records = json.load(f)
-            except (json.JSONDecodeError, OSError):
-                self.records = []
+        # Ensure the store data is a dict and contains 'records' key
+        if not isinstance(self.store.data, dict):
+            # Migrate old format (list of records) to new format (dict with 'records' key)
+            old_records = self.store.data
+            self.store.data = {"records": old_records}
+            self.store._save() # Save the migrated data
 
-    def _save(self):
-        dirpath = os.path.dirname(os.path.abspath(self.filepath))
-        os.makedirs(dirpath, exist_ok=True)
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w", encoding="utf-8", dir=dirpath,
-                prefix=".tmp_", suffix=".json", delete=False
-            ) as tmp:
-                json.dump(self.records, tmp, ensure_ascii=False, indent=2)
-                tmp_path = tmp.name
-            os.replace(tmp_path, self.filepath)
-        except Exception as exc:
-            log.warning("Failed to save emotional memory to %s: %s", self.filepath, exc)
+        if self.store.get("records") is None:
+            self.store.set("records", [], autosave=False)
+        self.records: list[dict] = self.store.get("records")
+
+    def _save_records(self):
+        self.store.set("records", self.records)
 
     def record(self, type_: str, content: str, valence: float, arousal: float):
         record = EmotionalRecord(type=type_, content=content, valence=valence, arousal=arousal)
@@ -64,11 +54,11 @@ class EmotionalMemory:
                 r["valence"] = valence
                 r["arousal"] = arousal
                 r["timestamp"] = now
-                self._save()
+                self._save_records()
                 return
         record.timestamp = now
         self.records.append(record.__dict__)
-        self._save()
+        self._save_records()
 
     def recall_recent(self, n: int = 5) -> list[dict]:
         sorted_records = sorted(self.records, key=lambda r: r["timestamp"], reverse=True)
@@ -91,4 +81,4 @@ class EmotionalMemory:
 
     def clear(self):
         self.records = []
-        self._save()
+        self._save_records()

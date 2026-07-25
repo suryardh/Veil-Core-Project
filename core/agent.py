@@ -1,15 +1,8 @@
-import re
-
 from llm.engine import LLMEngine
 from memory.long_term import LongTermMemory
 from memory.short_term import ShortTermMemory
+from utils.text import sanitize_llm_output
 import config
-
-CLEANUP_PATTERNS = [
-    (re.compile(r"<\|im_start\|>\s*(?:assistant|user|system)?", re.I), ""),
-    (re.compile(r"<\|im_end\|>"), ""),
-    (re.compile(r"^\s*(?:assistant|user|system)\s*", re.I), ""),
-]
 
 
 class VeilAgent:
@@ -31,15 +24,6 @@ class VeilAgent:
             content = msg["content"]
             blocks.append(f"<|im_start|>{role}\n{content}<|im_end|>")
         return "\n".join(blocks)
-
-    @staticmethod
-    def _clean_response(text):
-        text = text.strip()
-        if "<|im_end|>" in text:
-            text = text.split("<|im_end|>")[0]
-        for pattern, replacement in CLEANUP_PATTERNS:
-            text = pattern.sub(replacement, text)
-        return text.strip()
 
     @staticmethod
     def _build_full_input(user_input: str, observation: str = "") -> str:
@@ -65,7 +49,7 @@ class VeilAgent:
         budget = config.CTX_BUDGET_SYSTEM + config.CTX_BUDGET_HISTORY + len(user_input) + 500
         prompt = self._truncate(prompt, budget)
         response = self.llm.generate(prompt)
-        response = self._clean_response(response)
+        response = sanitize_llm_output(response)
         full_input = self._build_full_input(user_input, observation)
         self.short_memory.add_message("user", full_input)
         self.short_memory.add_message("assistant", response)
@@ -77,6 +61,6 @@ class VeilAgent:
         for token in self.llm.stream(prompt):
             full_response += token
             yield token
-        full_response = self._clean_response(full_response)
+        full_response = sanitize_llm_output(full_response)
         self.short_memory.add_message("user", user_input)
         self.short_memory.add_message("assistant", full_response)
