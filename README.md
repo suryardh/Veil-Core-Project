@@ -76,37 +76,54 @@ python app_tui.py
 # Architecture
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#e1f5fe', 'primaryBorderColor': '#0288d1', 'tertiaryColor': '#fff'}}}%%
 flowchart TB
-    User["User"] --> Analyzer["analyzer.py\nemotion detection"]
-    Analyzer --> State["state.py\nrelationship update + decay"]
-    State --> Emotional["emotional.py\nmemory record"]
+    User([User Input])
 
-    Emotional --> Dec{"cognition?"}
-    Dec -->|yes| Cognition["cognition.py\nsearch → extract → summarize"]
-    Dec -->|no| Route{"tool\nneeded?"}
-    Route -->|calc/datetime/tavily| Tool["_route_tool()\ninline execution"]
-    Route -->|neither| Direct["direct chat"]
+    subgraph Emotion["Emotion Layer"]
+        Analyzer[analyzer.py<br/>keyword - emotion detection]
+        State[state.py<br/>relationship update + decay]
+        Emotional[emotional.py<br/>memory record]
+    end
 
-    Cognition --> Prompt["prompting.py\nstate → nat lang + compose"]
+    subgraph Decision["Decision Layer"]
+        React{reaction<br/>override?}
+        CogCheck{cognition<br/>needed?}
+        ToolCheck{tool<br/>needed?}
+    end
+
+    subgraph Execution["Execution Layer"]
+        Cognition[cognition.py<br/>search - extract - summarize]
+        Tool[orchestrator.py<br/>run_tool]
+        Direct[direct chat]
+    end
+
+    subgraph Response["Response Layer"]
+        Prompt[prompting.py<br/>state to natural language]
+        Agent[agent.py<br/>build prompt + history]
+        LLM[engine.py<br/>llama.cpp]
+    end
+
+    User --> Analyzer
+    Analyzer --> State
+    State --> Emotional
+    Emotional --> React
+
+    React -->|yes| Return([Return reaction])
+    React -->|no| CogCheck
+
+    CogCheck -->|yes| Cognition
+    CogCheck -->|no| ToolCheck
+    ToolCheck -->|calc/datetime/tavily| Tool
+    ToolCheck -->|no| Direct
+
+    Cognition --> Prompt
     Tool --> Prompt
     Direct --> Prompt
 
-    Prompt --> Agent["Agent.generate()\nQwen Instruct format"]
-    Agent --> LLM["LLM Engine\nllama.cpp"]
-    LLM --> Response["Response"]
-
-    subgraph Subconscious["Subconscious (invisible)"]
-        Cognition
-    end
-
-    style Subconscious fill:#f0f0f0,stroke:#999,stroke-dasharray:5 5
-    style Analyzer fill:#e1f5fe
-    style State fill:#e1f5fe
-    style Emotional fill:#e1f5fe
-    style Cognition fill:#fff3e0
-    style Prompt fill:#e8f5e9
-    style Agent fill:#f3e5f5
-    style LLM fill:#fce4ec
+    Prompt --> Agent
+    Agent --> LLM
+    LLM --> Response
 ```
 
 ---
@@ -118,9 +135,10 @@ Veil/
 ├── app.py                      ← CLI entry point
 ├── app_tui.py                  ← TUI entry point (rich, split-panel)
 ├── config.py                   ← all tunables + .env
-├── test_agent.py               ← 43 assertions
+├── test_agent.py               ← 45 assertions
 │
 ├── core/
+│   ├── bootstrap.py            ← App startup consolidation
 │   ├── cognition.py            ← invisible search→extract→summarize
 │   ├── orchestrator.py         ← pure infra boundary (run_tool)
 │   └── agent.py                ← LLM wrapper + history
@@ -147,7 +165,7 @@ Veil/
 │   └── rhythm.py               ← 7-priority matrix + mode modulation + reactions
 │
 ├── tools/
-│   ├── base.py                 ← BaseTool + ToolResult + ToolContext + ToolRegistry
+│   ├── base.py                 ← BaseTool + ToolResult + ToolContext
 │   ├── web/
 │   │   └── search.py           ← Tavily REST + _CachedMixin
 │   └── system/
@@ -156,7 +174,8 @@ Veil/
 │
 ├── utils/
 │   ├── logger.py               ← structured logging
-│   └── async_utils.py          ← with_retry (used by search)
+│   ├── async_utils.py          ← with_retry (used by search)
+│   └── text.py                 ← LLM output sanitization
 │
 ├── requirements.txt
 ├── README.md
