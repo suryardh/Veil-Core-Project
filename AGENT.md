@@ -1,647 +1,370 @@
-# Veil Architecture
+# Veil 2.0 — Character Runtime Plan
 
-## Overview
+> Status: Planning
+> Goal: Rework Veil from a Stella-specific AI companion into a reusable character-first runtime for persistent roleplay characters and AI VTuber-style personalities.
 
-Veil is a **personality-centric local AI companion runtime**. It is designed as a persistent character system with emotional continuity.
+## 1. Product Direction
 
-The project shifted from an agent-framework approach (Phase 4.x) to a character-first architecture (Phase 5). The LLM is treated as a language generation engine; everything else — emotion, memory, cognition, state — is externalized.
+Veil is a character runtime, not merely an LLM wrapper. The LLM provides language/reasoning; Veil owns character identity, memory, emotional state, relationships, continuity, behavior, and presentation-neutral runtime logic.
 
----
+Core principles:
 
-# Core Philosophy
-
-```
-Character identity > capability
-Capability is invisible
-```
-
-Key principles:
-
-- **Personality is not a wrapper** — it is the main interface
-- **Tools are subconscious** — executed behind the character, never visible
-- **Emotional continuity** — state decays naturally, relationship progresses weighted by emotional depth
-- **No mode switching** — dynamic state modulation replaces rigid mode toggles
-- **No numeric values in prompts** — emotional state mapped to natural language descriptors
-
----
-
-# High-Level Architecture
-
-```mermaid
-flowchart TB
-    U["User Input"] --> PC["PersonalityCore"]
-
-    subgraph PC["PersonalityCore (coordinator)"]
-        direction TB
-        AN["analyzer\nkeyword → valence/arousal"] --> ST["state\n5-dim relationship + decay"]
-        ST --> EM["emotional\nsalience filter + record"]
-
-        EM --> DEC{"should use\ncognition?"}
-
-        DEC -->|yes| COG["cognition\nsearch → extract → summarize"]
-        DEC -->|no| ROUTE{"tool\nneeded?"}
-
-        ROUTE -->|calculator/datetime| ORCH["orchestrator\nrun_tool → ToolResult"]
-        ROUTE -->|no| NONE[""]
-
-        COG --> PR["prompting\nstate → nat lang"]
-        ORCH --> PR
-        NONE --> PR
-    end
-
-    PR --> AG["Agent.generate(system, input)"]
-    AG --> LLM["LLM Engine\nllama.cpp + Qwen 3B"]
-    LLM --> RES["Response"]
-
-    style AG fill:#f3e5f5
-    style LLM fill:#fce4ec
-    style RES fill:#e8f5e9
-    style COG stroke-dasharray:5 5
+```text
+Character > model
+Memory > chat history
+State > static prompt
+Runtime > one-off chatbot
 ```
 
----
+A character should remain recognizable when the underlying model changes.
 
-# Core Components
+## 2. Target Architecture
 
-## 1. PersonalityCore (`personality/core.py`)
-
-Thin coordinator — the "conscious mind" of the companion.
-
-**Responsibilities:**
-- Run emotion analysis on user input
-- Update relationship state (affection, trust, attachment, comfort, dependency)
-- Apply state decay
-- Record emotional memory (if salience threshold met)
-- Decide whether cognition (tools) is needed
-- Route to cognition or direct tool call
-- Compose final prompt via prompting module
-- Call agent to generate response
-
-**Flow:**
-```python
-class PersonalityCore:
-    def handle(self, user_input: str) -> str:
-        analysis = analyze(user_input)
-        self.state.update_from_interaction(analysis.emotion, analysis.arousal, analysis.confidence)
-        self.state.decay()
-        if analysis.confidence >= 0.4:
-            self.emotional_memory.record(...)
-        self._update_baseline_mood()
-        self._update_emotional_mode(analysis)
-        rhythm = compute_rhythm(self.state, analysis)
-        # Tool routing BEFORE cognition — calculator et al take priority
-        if is_emotional: pass
-        else:
-            tool_result = self._route_tool(user_input)
-            if tool_result:
-                ctx = tool_result
-            elif Cognition.can_handle(user_input):
-                ctx = self.cognition.process(user_input)
-        system = build_prompt(identity, state, emotional_summary, inactivity_ctx, rhythm)
-        return self.agent.generate(system, user_input, ctx)
+```text
+                    VEIL RUNTIME
+                         |
+        +----------------+----------------+
+        |                |                |
+   Character         Memory           State / Emotion
+     Engine           Engine              Engine
+        |                |                |
+        +----------------+----------------+
+                         |
+                  Context Builder
+                         |
+                  Conversation Core
+                         |
+              +----------+----------+
+              |                     |
+         LLM Runtime          Cognition / Tools
+              |                     |
+              +----------+----------+
+                         |
+                 Response Evaluator
+                         |
+                  Runtime Response
+                         |
+              +----------+----------+
+              |          |          |
+             CLI        Web      VTuber/Voice
 ```
 
-**Status:** IMPLEMENTED
+Core subsystems must be replaceable and independently testable.
 
----
+## 3. Character Abstraction
 
-## 2. State Machine (`personality/state.py`)
+Remove Stella-specific assumptions from generic runtime code.
 
-Two dataclasses: **StellaIdentity** (fixed traits) and **StellaState** (dynamic).
+Target structure:
 
-### StellaIdentity (permanent)
-```python
-@dataclass
-class StellaIdentity:
-    humor: float = 0.7
-    warmth: float = 0.8
-    teasing: float = 0.5
-    emotional_openness: float = 0.6
-    protectiveness: float = 0.7
+```text
+characters/
+  stella/
+    character.yaml
+    personality.yaml
+    lore.yaml
+    rules.yaml
+  loader.py
 ```
 
-### StellaState (per interaction)
-```python
-@dataclass
-class StellaState:
-    affection: float = 0.7   # 0.0 → 1.0; romantic start
-    trust: float = 0.8       # 0.0 → 1.0; romantic start
-    attachment: float = 0.5  # 0.0 → 1.0; romantic start
-    comfort: float = 0.7     # 0.0 → 1.0; romantic start
-    dependency: float = 0.4  # 0.0 → 1.0; romantic start
-    baseline_mood: str = "warm"       # "warm" | "subdued" | "neutral"
-    emotional_mode: str = "yearning"  # "comforting" | "withdrawn" | "yearning" | "excited" | "soft" | "neutral"
-    mode_strength: float = 0.5  # 0.0 → 1.0; decays ×0.85/turn; resists overwrite when > 0.5
+A character definition should contain:
+
+- identity
+- personality traits
+- speech style
+- lore/world knowledge
+- behavioral rules
+- boundaries
+- relationship defaults
+- optional emotional configuration
+
+Stella becomes a character profile loaded by Veil, not the identity of Veil itself.
+
+## 4. Runtime State
+
+Separate immutable character definition from mutable interaction state.
+
+### Character definition
+
+Stable traits such as:
+
+- warmth
+- humor
+- curiosity
+- teasing
+- values
+- speech style
+
+### Character state
+
+Dynamic values such as:
+
+- mood
+- energy
+- affection
+- trust
+- attachment
+- comfort
+- current conversational context
+- temporary emotional intensity
+
+State transitions should be deterministic and testable where practical.
+
+## 5. Memory 2.0
+
+Memory remains external to the model.
+
+Recommended categories:
+
+- `fact` — stable user information
+- `preference` — likes/dislikes
+- `event` — meaningful past events
+- `relationship` — relationship-relevant history
+- `emotional` — emotionally salient interactions
+- `conversation` — short-term context
+- `lore` — character/world information
+
+Target pipeline:
+
+```text
+Conversation
+    |
+Memory Extraction
+    |
+Validation / Importance
+    |
+Persistence
+    |
+Retrieval / Ranking
+    |
+Context Builder
 ```
 
-### State update rules
-- **Positive** interaction → affection + trust + attachment + comfort + dependency increase
-- **Intimate** interaction → stronger boost (especially attachment + affection)
-- **Negative** interaction → affection - trust - comfort decrease
-- **Confidence < 0.4** → no state update (ambiguity guard)
+Keep the current persistence mechanism where practical. Move to SQLite and semantic/hybrid retrieval only when measurements justify the added complexity.
 
-### Decay
-Each dimension decays at a different rate per turn:
-- `affection *= 0.998` — warms up fast, cools slow
-- `trust *= 0.9995` — very slow to erode
-- `comfort *= 0.997` — fades quickest
-- Prevents permanent maxed state
+## 6. Emotion & Relationship
 
-### Stage label (derived, not used in prompts — personality is always romantic)
-```python
-combined = (affection + trust*0.8 + attachment*0.6 + comfort*0.4 + dependency*0.3) / 3.1
-# < 0.2 = kenalan
-# < 0.4 = akrab
-# < 0.6 = dekat
-# < 0.8 = sayang
-# >= 0.8 = istimewa
-# With romantic defaults (0.7/0.8/0.5/0.7/0.4) → "sayang"
+Keep the existing deterministic emotional system as a baseline, but move it behind clear service boundaries.
+
+```text
+User Input
+    |
+Emotion Interpreter
+    |
+Relationship Update
+    |
+State Transition
+    |
+Context
 ```
 
-### Mood (emergent)
-```python
-dominant_mood() → "warm" | "playful" | "guarded" | "yearning" | "neutral"
+The current keyword analyzer can remain as a cheap fallback. Future implementations may use a small classifier or LLM-assisted interpretation.
+
+Do not require a trained emotion model for the first milestone.
+
+## 7. Context Builder
+
+The LLM should receive only context relevant to the current turn:
+
+```text
+Character Definition
++ Current State
++ Relevant Memories
++ Recent Conversation
++ Cognition / Tool Results
++ Current User Input
+        |
+       LLM
 ```
 
-Mood is derived from state combination, not set manually.
+Never dump the entire memory store into every prompt.
 
-**Status:** IMPLEMENTED
+## 8. LLM Abstraction
 
----
+Veil must not depend on one model family.
 
-## 3. Emotion Analyzer (`personality/analyzer.py`)
+Provide a stable interface for local and remote backends, such as:
 
-Keyword-based valence/arousal detection. Designed for deterministic, fast, cheap operation on local models.
+- llama.cpp / GGUF
+- OpenAI-compatible APIs
+- other local inference servers
 
-### Output
-```python
-@dataclass
-class EmotionAnalysis:
-    emotion: str     # "positive" | "negative" | "intimate" | "neutral"
-    valence: float   # -1.0 to 1.0
-    arousal: float   # 0.0 to 1.0
-    confidence: float # 0.0 to 1.0
+Model fine-tuning is optional and must never be a runtime requirement.
+
+## 9. Fine-Tuning Strategy
+
+Do **not** begin with CPT/SFT/LoRA.
+
+First establish a baseline using:
+
+1. character definition
+2. memory
+3. state
+4. context construction
+5. response evaluation
+
+Only then benchmark tuning.
+
+Possible later path:
+
+```text
+Character conversations
+        |
+Dataset cleaning
+        |
+SFT / LoRA experiment
+        |
+Character consistency benchmark
+        |
+Optional character adapter
+        |
+Veil LLM backend
 ```
 
-### Detection method
-- **Lexicon** — regex patterns mapped to emotion + valence + arousal
-- **Negation patterns** — "ga sayang" overrides "sayang" (negative instead of intimate)
-- **Emoji** — ❤, 😊, 😢, etc. with valence mapping
-- **Intensifiers** — `!`, `??`, ALL CAPS boost arousal
-- **Confidence** — proportion of words matched; low confidence → skip state update
+CPT should only be considered when there is a clear domain/style corpus large enough to justify continued pretraining.
 
-### Example outputs
-| Input | Emotion | Valence | Arousal |
-|-------|---------|---------|---------|
-| "hai apa kabar" | neutral | 0.0 | 0.1 |
-| "aku sayang kamu" | intimate | 0.8 | 0.7 |
-| "makasih ya" | positive | 0.6 | 0.3 |
-| "kesel ah" | negative | -0.7 | 0.7 |
-| "kamu ga sayang aku" | negative | -0.05 | 0.7 |
+## 10. Response Evaluation
 
-**Status:** IMPLEMENTED
+Add a lightweight evaluator after generation.
 
----
+Evaluate:
 
-## 4. Emotional Memory (`memory/emotional.py`)
+- character consistency
+- speech-style consistency
+- lore consistency
+- state consistency
+- memory consistency
+- unwanted prompt/model drift
 
-Stores interactions with emotional weight. Separate from factual long-term memory.
+The evaluator may request regeneration, but retries must be bounded.
 
-### Schema
-```python
-@dataclass
-class EmotionalRecord:
-    type: str        # "interaction" | "compliment" | "conflict" | ...
-    content: str
-    valence: float
-    arousal: float
-    timestamp: float
-    recurrence: int
+## 11. VTuber Readiness
+
+The runtime should eventually be able to emit structured response metadata:
+
+```json
+{
+  "text": "...",
+  "emotion": "happy",
+  "intensity": 0.7,
+  "expression": "smile",
+  "action": "wave"
+}
 ```
 
-### Salience filter
-Only records where `abs(valence) * arousal * (1 + 0.2 * recurrence) >= 0.25` are stored. Prevents memory pollution from low-emotion chit-chat. Recurrence boost means repeated topics are weighted higher.
+This allows later adapters for:
 
-### Recurrence merging
-If the same content appears within 1 hour, recurrence counter increments instead of creating a duplicate.
+- TTS
+- STT
+- Live2D
+- VRM
+- streaming overlays
+- Discord/Telegram/Web clients
 
-### Recall
-- `recall_recent(n=5)` — most recent emotional records
-- `recall_by_valence(min_valence)` — filter by emotional tone
-- `emotional_summary()` — formatted for prompt injection
+The core runtime must remain usable without an avatar.
 
-**Status:** IMPLEMENTED
+## 12. Migration Phases
 
----
+### Phase 0 — Architecture Freeze
 
-## 5. Cognition (`core/cognition.py`)
+- Document subsystem boundaries and contracts.
+- Add/repair tests around existing behavior.
+- Avoid unrelated feature work while core boundaries are changing.
 
-Invisible search→extract→summarize subsystem. Replaces the old Planner with a much simpler design.
+### Phase 1 — Character Runtime
 
-**What it does:**
-- Triggered by keywords (rangkum, cari, jelaskan, search, etc.)
-- Runs `web_search` → optionally `web_extract` → returns synthesized text
-- Returns `str | None` — no DAG, no JSON, no ToolContext exposure
-- Search query auto-cleaned via `_clean_query()` (`rfind`-based prefix stripping)
+- Introduce generic character schema.
+- Extract Stella into a character profile.
+- Remove Stella-specific imports from generic core modules.
+- Add character loader and validation.
 
-**What it does NOT do:**
-- No visible execution traces
-- No dependency graph
-- No parallel levels
-- No JSON planning
-- No step enumeration
+### Phase 2 — State & Relationship Service
 
-Cognition is called by PersonalityCore AFTER tool routing (calculator/datetime/tavily take priority). The result is injected after the user question as `Hasil pencarian:` — the LLM sees it as natural knowledge, not tool output.
+- Separate identity from mutable state.
+- Extract state transitions from `PersonalityCore`.
+- Preserve useful existing decay and relationship behavior.
+- Add deterministic unit tests.
 
-**Status:** IMPLEMENTED
+### Phase 3 — Memory 2.0
 
----
+- Define unified memory schema.
+- Keep emotional and factual memories distinct.
+- Add retrieval/ranking interfaces.
+- Introduce semantic retrieval only after a measurable baseline.
 
-## 6. Orchestrator (`core/orchestrator.py`)
+### Phase 4 — Conversation / Context Pipeline
 
-Pure infrastructure boundary. No personality, no cognition, no routing logic.
+- Introduce a dedicated conversation coordinator.
+- Build context through explicit stages.
+- Keep tools/cognition separate from character-facing output.
+- Make context assembly independently testable.
 
-```python
-class Orchestrator:
-    def register_tool(self, name: str, func)
-    def run_tool(self, name: str, input_: str = "") -> ToolResult
-```
+### Phase 5 — Character Consistency
 
-Methods return `ToolResult` directly. No formatting, no `chat_with_context`, no state recording. The Orchestrator is the stable backend API for future integrations (Discord, Web UI, TTS, etc.).
+- Add evaluator interface.
+- Build a small benchmark dataset.
+- Measure personality, lore, state, and memory consistency.
+- Add bounded regeneration.
 
-**Status:** IMPLEMENTED
+### Phase 6 — Model Layer
 
----
+- Formalize the LLM backend interface.
+- Keep llama.cpp working.
+- Add another backend only when useful for comparison.
 
-## 7. Agent Layer (`core/agent.py`)
+### Phase 7 — Training Experiments
 
-Prompt assembly and LLM interaction layer.
+- Create reproducible dataset/evaluation tooling.
+- Compare base model vs LoRA/SFT.
+- Keep training assumptions outside runtime architecture.
 
-**Responsibilities:**
-- Build prompt in Qwen Instruct format (`<|im_start|>`)
-- Format history as chat-template blocks
-- Context budgeting (system: 2.5k, history: 2.5k, response: 800)
-- Max tokens: 300 (normal), 400 (stream)
-- Sanitize model output (regex + split on first `<|im_end|>`)
-- Update short-term memory
+### Phase 8 — Voice & Presence
 
-**Key methods:**
-- `generate(system: str, user_input: str) → str` — takes fully composed system prompt, generates response
-- `chat_stream(user_input: str)` — streaming with token yield
+- TTS adapter.
+- STT adapter.
+- Structured emotion/expression output.
+- Idle/initiative events.
 
-**Removed from agent:**
-- `chat_with_context()` — replaced by `generate()`
-- `ToolContext` injection — moved to PersonalityCore + Cognition
-- `mode` parameter — replaced by dynamic state
-- `_build_raw_metadata()` — no longer needed
+### Phase 9 — VTuber / Platform Adapters
 
-**Status:** IMPLEMENTED
+- Live2D/VRM adapter.
+- Web UI.
+- Discord/Telegram adapters.
+- Streaming integration.
 
----
+## 13. Definition of Done for Veil 2.0 Core
 
-## 8. Personality Identity (`personality/stella.py`)
+- A character can be loaded without changing runtime source code.
+- Stella is only one character profile.
+- Character state survives process restarts.
+- Important memories survive process restarts.
+- Relevant memories can be retrieved without injecting the entire store.
+- The LLM backend can be replaced behind an interface.
+- Core logic is testable without a live model.
+- Character consistency has a measurable benchmark.
+- Tools/cognition do not leak implementation details into character responses.
+- The runtime can emit structured emotion/action metadata without requiring a VTuber frontend.
 
-Module-level constants only. No class, no `build_prompt()`.
+## 14. Non-Goals for the First Core Milestone
 
-```python
-BASE_IDENTITY      — "You are Stella, a human-like AI companion..."
-LANGUAGE_RULES     — Indonesian-first, casual internet style
-BEHAVIOR_RULES     — Natural flow, adaptive tone, NSFW allowed, no AI mention
-```
+Do not prioritize:
 
-Used as reference by `prompting.py` when composing the final prompt with dynamic state context.
-
-**Status:** IMPLEMENTED
-
----
-
-## 9. Prompt Composition (`personality/prompting.py`)
-
-Builds the final system prompt from components:
-
-```python
-def build_prompt(identity_blob, state, emotional_context, user_input, cognition_context) -> str
-```
-
-- **`describe_state(state)`** — state → natural language (no numeric values)
-  - `"Stella feels warm and affectionate right now. You are at the 'sayang' stage."`
-- **Mood descriptors** — maps `dominant_mood()` to a natural sentence
-- **Cognition injection** — "Relevant factual context:" block (only if tools were used)
-- **Emotional context** — "Recent emotional context:" block with summary
-
-Max 3-5 dynamic variables injected to prevent prompt drift on Qwen 3B.
-
-**Status:** IMPLEMENTED
-
----
-
-## 10. Memory Extractor (`memory/extractor.py`)
-
-Structured fact extraction from natural language before storage.
-
-### `extract_fact(text)`
-```python
->>> extract_fact("tolong ingat kalau aku suka kopi")
-{"type": "preference", "content": "Aku suka kopi", "importance": 3, "tags": ["preference"]}
-```
-
-### Classification
-| Type | Keywords |
-|------|----------|
-| `personal_info` | nama, umur, alamat, name, age |
-| `preference` | suka, cinta, favorit, like, love |
-| `reminder` | besok, meeting, jam, remind |
-| `general` | fallback |
-
-### Importance scoring
-| Level | Criteria |
-|-------|----------|
-| 4 | Personal info (nama, umur, alamat) |
-| 3 | Preferences (suka, cinta, favorite) |
-| 2 | Reminders + dispreferences |
-| 1 | General + short statements |
-
-**Status:** IMPLEMENTED
-
----
-
-## 11. Long-Term Memory (`memory/long_term.py`)
-
-Persistent JSON-backed fact storage.
-
-Features:
-- timestamped memories
-- importance scoring (1–4, from extractor)
-- deduplication
-- capped at 500 facts, injects max 10
-- per-tier quota: 5 most important + 5 most recent (prevents importance shadowing)
-- explicit `importance` parameter
-
-**Status:** IMPLEMENTED
-
----
-
-## 12. Short-Term Memory (`memory/short_term.py`)
-
-Recent conversation history management.
-
-Features:
-- 4k character budget
-- Ignores low-value messages (< 30 chars, no alpha chars, generic greetings after first)
-- Truncates long messages (> 500 chars)
-- Chat-template format output
-
-**Status:** IMPLEMENTED
-
----
-
-# Tool System
-
-## 13. BaseTool + ToolResult + ToolContext + ToolRegistry (`tools/base.py`)
-
-### ToolResult
-```python
-@dataclass
-class ToolResult:
-    success: bool
-    data: Any = None
-    error: str | None = None
-    source: str = ""
-    meta: dict = field(default_factory=dict)
-
-    @classmethod
-    def ok(cls, data, source="") -> ToolResult: ...
-    @classmethod
-    def fail(cls, error, source="") -> ToolResult: ...
-```
-
-### ToolContext (internal only)
-```python
-@dataclass
-class ToolContext:
-    tool: str
-    formatted: str
-    raw: Any = None
-    success: bool = True
-    source: str = ""
-    error: str | None = None
-
-    @classmethod
-    def from_result(cls, tool, result, *, label="") -> ToolContext: ...
-    @classmethod
-    def from_error(cls, tool, error, *, label="") -> ToolContext: ...
-```
-
-### ToolRegistry
-```python
-class ToolRegistry:
-    def register(self, tool: BaseTool)
-    def describe_for_planner(self) -> str  # dynamic tool descriptions
-```
-
-**Status:** IMPLEMENTED
-
-## 14-17. Web Tools (`tools/web/search.py`)
-
-- `WebSearchTool` — Tavily `/search`, Bearer auth, TTL cache, retry wrapper
-- `WebExtractTool` — Tavily `/extract`, URL content extraction
-- `TavilyUsageTool` — Tavily `/usage`, quota check
-
-All use `_CachedMixin` (TTL 3600s) and `with_retry()` (1 retry, 1s backoff).
-
-**Status:** IMPLEMENTED
-
-## 18. CalculatorTool (`tools/system/calculator.py`)
-
-Safe eval: restricted globals, math function whitelist, percentage parsing, injection blocking.
-
-## 19. DateTimeTool (`tools/system/datetime.py`)
-
-WIB (UTC+7), Indonesian locale (Senin, Selasa, ..., Januari, ...).
-
----
-
-# Execution Flow
-
-```mermaid
-flowchart LR
-    USER["User"] --> PC["PersonalityCore.handle()"]
-
-    PC --> A["inactivity effect\nabsence → trust/attachment delta"]
-    A --> B["analyze()\n→ EmotionAnalysis"]
-    B --> C["state.update()\n+ decay()"]
-    C --> D{"salience\n>= 0.25?"}
-    D -->|yes| E["emotional.record()\n+ recurrence boost"]
-    D -->|no| F["_update_baseline_mood()\n_update_emotional_mode()"]
-    E --> F
-
-    F --> G["is_emotional?\nvalence/arousal gate"]
-    G -->|yes| H["skip search"]
-    G -->|no| I["_route_tool()\ncalc → datetime → tavily"]
-    I -->|hit| J["Tool result → ctx"]
-    I -->|miss| K["Cognition.can_handle()"]
-    K -->|yes| L["cognition.process()\ninvisible search→extract"]
-    K -->|no| M[""]
-
-    J --> N["build_prompt()\nstate → nat lang + rhythm"]
-    L --> N
-    M --> N
-
-    N --> O["Agent.generate()"]
-    O --> P["LLM inference"]
-    P --> Q["_clean_response()"]
-    Q --> R["short_memory.add()"]
-    R --> S["Response"]
-
-    style L stroke-dasharray:5 5,fill:#fff3e0
-    style Q fill:#e1f5fe
-    style P fill:#fce4ec
-    style S fill:#e8f5e9
-```
-
----
-
-# Key Differences from Phase 4.x
-
-| Aspect | Phase 4.x (Agent Framework) | Phase 5 (Companion) |
-|--------|----------------------------|---------------------|
-| Entry point | `Orchestrator.handle()` | `PersonalityCore.handle()` |
-| Tool routing | IntentRouter (regex) | Analyzer + Cognition |
-| Planner | DAG, JSON planning, parallel | Invisible cognition |
-| Modes | casual / flirty / dark / ... | Dynamic state modulation |
-| Emotional model | None (factual only) | Valence/arousal + relationship state |
-| Tool visibility | `=== Planner execution ===` | Never visible |
-| Orchestrator role | Coordinator + personality | Pure infra boundary |
-| State management | SessionState + ref resolution | Relationship state + emotional memory |
-| Test count | 30 | 45 (all passing) |
-
----
-
-# Development Roadmap
-
-## Phase 5 (Current) — Personality-Centric Rewrite
-- [x] Emotion analyzer (keyword → valence/arousal)
-- [x] State machine (identity + relationship dynamics)
-- [x] Emotional memory (salience filter, recurrence)
-- [x] Cognition (invisible search→extract→summarize)
-- [x] Prompt composer (state → natural language)
-- [x] PersonalityCore coordinator
-- [x] Orchestrator as pure infra boundary
-- [x] Remove IntentRouter, Planner, StateManager
-
-## Phase 6 — Emotional Depth
-- Relationship drift detection
-- Conflict/reconciliation dynamics
-- Long-term emotional arcs (attachment styles)
-- User preference learning
-
-## Phase 7 — Multi-Platform
-- Discord integration
-- TTS voice
-- Web UI
-- Mobile app
-
-## Phase 8 — Memory Evolution
-- Semantic memory (embeddings)
-- Emotional→factual memory cross-reference
-- Dream/consolidation cycles
-
----
-
-# Current State
-
-## Complete
-- Local LLM inference with streaming
-- Stella identity (Indonesian-first companion)
-- Emotion analysis (4 emotions, valence/arousal)
-- Relationship state (5 dimensions, decay, stage label)
-- Mood modulation (5 moods, emergent)
-- Emotional mode system (6 modes, mode_strength decay 0.85, overwrite guard > 0.5)
-- Emotional memory (salience filter 0.25, recurrence boost, recurrence merging)
-- Short-term memory (ignore/truncate)
-- Long-term memory (JSON, per-tier quota 5+5, dedup)
-- Fact extraction (type, importance, framing strip)
-- Inactivity effects (severity-scaled trust/attachment deltas, absence bucket guard)
-- Initiative system (probabilistic openers, 5 relationship-aware branches)
-- Rhythm system (7-priority matrix, mode modulation, reaction cooldowns)
-- Baseline mood (trailing 5 emotional records, time-weighted)
-- Cognition (invisible search→extract→summarize, rfind-based query cleaning)
-- Tool routing priority (calculator/datetime/tavily before cognition)
-- Orchestrator (pure infra boundary)
-- ToolContext + ToolResult + ToolRegistry
-- Web search (Tavily, TTL cache, retry, prefix stripping)
-- Calculator (+ sqrt/sin/cos/%, injection blocked)
-- Datetime (WIB Indonesian locale)
-- Prompt composition (state → natural language, rhythm style, inactivity context)
-- Agent layer (Qwen format, context budgeting, response cleanup)
-- Schema-versioned persistence (v2, baseline_mood + emotional_mode + mode_strength migration)
-- Observation context preserved between turns (augmented user input stored in history)
-- Inactivity effect stacking guard (all severities dedup including very_long)
-- Structured logging (print → log.warning/log.error in store, persistence)
-- CoRT analysis (51 bugs identified: 5 high, 12 medium, 34 low — all high+medium fixed)
-- Post-CoRT improvements: lexicon enriched (30+ words), scoring-based recall, tool retry, schema migration registry
-- TUI with rich (split-panel, emotional state display, colored history)
-- Automated testing (45 assertions passing)
-
-## Recent Fixes (May 2026)
-- **agent.py**: Observation loss between turns fixed — augmented input stored in history
-- **state.py**: dominant_mood trust threshold 0.2→0.3 (aligned with inactivity/initiative)
-- **core.py**: very_long inactivity guard; now parameter passed to try_reaction
-- **analyzer.py**: Negation override only when neg_count >= non_neg_count (no valence flip)
-- **cognition.py**: Extract truncation 500→300 chars (matches agent.py usage)
-- **inactivity.py**: Severity naming consistent; short absence skips _branch_effect
-- **initiative.py**: pick_opener accepts rng parameter (deterministic tests)
-- **rhythm.py**: try_reaction accepts optional now parameter
-- **persistence.py**: Explicit v1→v2 migration for all fields; error logging
-- **search.py**: Multi-pass _clean_query (nested prefix stripping)
-- **emotional.py**: Valence/arousal updated on recurrence (not just timestamp/count)
-- **store.py**: print() → log.warning() in production path
-- **calculator.py**: Simplified PCT_PATTERNS (removed redundant pattern)
-- **short_term.py**: "User:" prefix stripped before IGNORE_MESSAGES check
-- **agent.py chat_stream()**: Consistent "User:" prefix with generate()
-- **app.py**: Empty input validation (skip instead of process)
-
-### Post-CoRT Quality Sprint (May 2026)
-- **config.py**: MAX_TOKENS 150→300, MAX_TOKENS_STREAM 200→400; CTX_BUDGET_HISTORY 1500→2500, CTX_BUDGET_SYSTEM 2000→2500
-- **app.py**: Model file existence check with actionable error message
-- **core.py**: Initiative throttle (300s cooldown); tool retry via `with_retry()` on all 3 paths
-- **persistence.py**: Structured schema migration registry (`_register` decorator, auto-chain v→v+1)
-- **analyzer.py**: Lexicon enriched from 27→57 entries (semangat, hebat, keren, takut, cemas, bosan, etc.); multi-word negations (gak mau, ga peduli); 5 new test cases
-- **memory/long_term.py**: Scoring-based recall — `match_ratio × 0.7 + importance_norm × 0.3`, top 10 results (was binary filter + 5+5 quota)
-- **app_tui.py**: Rich-based split-panel TUI with emotional state header, colored conversation history, input prompt
-- **requirements.txt**: Added `rich` dependency
-
-### June 2026 — GPU Acceleration & Personality Overhaul
-- **config.py**: Added `USE_GPU` flag (reads `VEIL_USE_GPU` env var, default "1")
-- **engine.py**: Dual CPU/GPU mode — `n_gpu_layers=-1` when GPU enabled; CUDA DLL path setup via `os.add_dll_directory()`
-- **state.py**: Romantic initial values (affection 0.7, trust 0.8, attachment 0.5, comfort 0.7, dependency 0.4); default mood "warm", emotional mode "yearning"
-- **stella.py**: Identity changed to "his affectionate companion"; behavior rules prioritize using info user provided
-- **prompting.py**: Removed stage from `describe_state()`; updated mood/mode descriptions to romantic
-- **core.py**: Reordered routing — cognition tried **before** tool routing (prevents "hari ini" from stealing search queries)
-- **cognition.py**: `_summarize()` includes Tavily `answer` (no prefix); limits to 3 results
-- **search.py**: `include_answer: True`, `search_depth: advanced` for richer results
-- **agent.py**: Removed `User:` prefix from user messages; removed `=== Search Results ===` delimiter; fixed truncation budget (mixing token+char → pure char)
-- **test_agent.py**: Updated for romantic defaults (all 45 passing)
-
-## In Progress
-- Emotional depth (arcs, attachment, conflict)
-- Multi-platform (Discord, TTS)
-- Semantic memory
-
----
-
-# Recommended Model
-
-**Qwen2.5-3B-Instruct GGUF (Q4_K_M)**
-
-Inference backend: llama.cpp + llama-cpp-python
-
----
-
-# Final Notes
-
-Veil is a research-oriented modular local AI companion runtime.
-
-The shift from agent-framework to character-first architecture reflects the understanding that **for companion AI, identity is more important than capability**. Capability exists to serve the character, not the other way around.
-
-The long-term goal is a persistent emotional entity that lives locally, respects privacy, and evolves naturally through interaction.
+- full autonomous agents
+- multi-agent orchestration
+- unrestricted computer control
+- full model pretraining
+- full CPT pipelines
+- complex planning DAGs
+- avatar rendering inside the core
+- a massive vector database before retrieval needs are proven
+
+## 15. Engineering Rules
+
+- Prefer simple, observable systems over clever abstractions.
+- Keep character data separate from runtime logic.
+- Keep memory separate from prompts and model weights.
+- Keep state transitions deterministic where possible.
+- Every major subsystem needs a clear interface and tests.
+- Measure before replacing a working subsystem.
+- Do not introduce fine-tuning merely because prompting feels imperfect.
+- Preserve backwards compatibility where practical during migration.
