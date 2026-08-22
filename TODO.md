@@ -1,1011 +1,759 @@
-# Veil 2.0 — Implementation TODO & Architecture Roadmap
+# Veil Core — TODO
 
-> This file turns `PLAN.md` into an implementation checklist.
+> Detailed execution checklist. Follow the order unless `PLAN.md` is updated.
+> `PLAN.md` explains priorities and rationale. `AGENT.md` remains the source of
+> truth for architecture and engineering rules.
 >
-> **Primary goal:** evolve Veil from a Stella-specific companion into a reusable Character Runtime for persistent roleplay / AI VTuber-style characters.
->
-> **Rule:** do not jump to fine-tuning before the runtime has measurable baselines.
+> Status:
+> - `[ ]` Not started
+> - `[~]` In progress
+> - `[x]` Complete
+> - `[!]` Blocked / needs investigation
 
 ---
 
-# 0. How to Use This Roadmap
+# 🔴 0. Safety & Baseline
 
-Each phase should produce a working, testable increment.
+## STATE-001 — Backup `state.json` before major changes
 
-Status legend:
+**Goal:** protect accumulated relationship/state data before model and runtime changes.
 
-- `[ ]` not started
-- `[~]` in progress
-- `[x]` completed
-- `[!]` blocked / needs investigation
+**Why:** `state.json` is persistent project data, not disposable configuration.
 
-Recommended order:
+**Likely files/areas:**
+- `state.json`
+- state persistence code
+- CLI/runtime entry point
 
-```text
-Character
-   ↓
-State / Relationship
-   ↓
-Memory
-   ↓
-Context Pipeline
-   ↓
-Evaluation
-   ↓
-LLM abstraction
-   ↓
-Training experiments
-   ↓
-Voice / VTuber adapters
-```
+**Tasks**
+- [ ] Identify the current state file path.
+- [ ] Verify which runtime components write to it.
+- [ ] Create a manual export/backup command or documented procedure.
+- [ ] Include timestamp/schema version in exported backup metadata.
+- [ ] Restore a backup into a temporary copy.
+- [ ] Verify the restored state loads successfully.
+- [ ] Document the procedure.
 
-Do not implement everything at once.
+**Acceptance criteria**
+- A complete state backup can be created without modifying the original.
+- A backup can be restored successfully.
+- The backup contains enough information to recover relationship state.
 
----
-
-# 1. Phase 0 — Baseline & Architecture Audit
-
-## Objective
-
-Understand what Veil already has before replacing anything.
-
-## Tasks
-
-- [ ] Map the current source tree.
-- [ ] Identify where Stella-specific assumptions exist.
-- [ ] Identify the current `PersonalityCore` responsibilities.
-- [ ] Identify current emotion/state persistence.
-- [ ] Identify short-term and long-term memory paths.
-- [ ] Identify LLM/inference boundaries.
-- [ ] Identify tool/cognition boundaries.
-- [ ] Run the existing test suite and record the baseline.
-- [ ] Record current behavior with a small fixed conversation benchmark.
-
-## Deliverable
-
-Create an architecture note containing:
-
-```text
-Current input
-    ↓
-Emotion?
-    ↓
-State?
-    ↓
-Memory?
-    ↓
-Prompt?
-    ↓
-LLM
-    ↓
-Response
-```
-
-Then compare it against the target architecture:
-
-```text
-User
- ↓
-Conversation Coordinator
- ├── Emotion Interpreter
- ├── Relationship/State
- ├── Memory Retrieval
- ├── Character Definition
- ├── Tool/Cognition
- └── Context Builder
-          ↓
-       LLM Runtime
-          ↓
-   Response Evaluator
-          ↓
-       Response
-```
+**Do not**
+- Automatically delete old state.
+- Rewrite the state schema in the same task.
+- Make backup creation depend on the LLM.
 
 ---
 
-# 2. Phase 1 — Generic Character System
+## BASE-001 — Capture the current baseline
 
-## Why
+**Goal:** know what "better" means before changing the model.
 
-Currently Stella should not be the hardcoded identity of the runtime.
+**Tasks**
+- [ ] Record current model name and quantization.
+- [ ] Record current context limit/config.
+- [ ] Record system/history/response token budgets.
+- [ ] Record average response latency.
+- [ ] Record RAM/VRAM usage if measurable.
+- [ ] Save 10–20 representative conversations/prompts.
+- [ ] Include casual Indonesian, emotional interaction, memory recall, and character-boundary cases.
+- [ ] Record known current failures.
 
-The goal is:
-
-```text
-Veil
- ├── Character Runtime
- │
- ├── Stella
- ├── ExampleCharacter
- └── UserCharacter
-```
-
-A new character should be loadable without editing core runtime code.
-
-## Tasks
-
-- [ ] Define a `CharacterDefinition` model.
-- [ ] Define character validation.
-- [ ] Create a character loader.
-- [ ] Move Stella identity into external character data.
-- [ ] Remove Stella-specific imports from generic runtime modules.
-- [ ] Define defaults for optional character fields.
-- [ ] Add serialization/deserialization tests.
-- [ ] Add one second dummy character to prove the abstraction works.
-
-## Suggested structure
-
-```text
-characters/
-├── loader.py
-├── schema.py
-├── stella/
-│   ├── character.yaml
-│   ├── personality.yaml
-│   ├── lore.yaml
-│   └── rules.yaml
-└── example/
-    ├── character.yaml
-    ├── personality.yaml
-    ├── lore.yaml
-    └── rules.yaml
-```
-
-## Example
-
-```yaml
-name: Stella
-
-personality:
-  warmth: 0.9
-  curiosity: 0.9
-  playfulness: 0.8
-  empathy: 0.9
-
-speech:
-  language: id
-  formality: casual
-  emoji_level: medium
-
-behavior:
-  teasing: true
-  proactive: true
-```
-
-### Inspiration
-
-SillyTavern uses the concept of a **character card**: a reusable collection of character information/prompts rather than hardcoding one personality into the application. This is directly relevant to Veil's character abstraction. citeturn0search0turn0search7
-
-RisuAI also separates character-card handling from its broader processing/storage systems, which is a useful architectural precedent. citeturn0search4
-
-### What to borrow conceptually
-
-Borrow:
-
-- character-as-data
-- import/export-friendly schema
-- versioned character definitions
-- optional metadata
-- lore/world information
-
-Do **not** copy an external project's implementation wholesale. Reimplement the concepts around Veil's own interfaces.
+**Acceptance criteria**
+- A reproducible baseline exists before model migration.
 
 ---
 
-# 3. Phase 2 — State & Relationship Engine
+# 🔴 1. Model Migration — Qwen 7B
 
-## Why
+## MODEL-001 — Inventory current model integration
 
-A character's personality should be relatively stable while its emotional condition changes.
+**Goal:** understand exactly what must change.
 
-Separate:
+**Tasks**
+- [ ] Locate model configuration.
+- [ ] Locate model loading/inference code.
+- [ ] Locate model path configuration.
+- [ ] Locate generation parameters.
+- [ ] Locate context-length configuration.
+- [ ] Document assumptions specific to the current 3B model.
 
-```text
-Character Definition
-    = who the character is
-
-Character State
-    = how the character feels right now
-
-Relationship State
-    = how the character currently relates to the user
-```
-
-## Tasks
-
-- [ ] Define `CharacterState`.
-- [ ] Define `RelationshipState`.
-- [ ] Move state mutation behind a service/interface.
-- [ ] Separate state persistence from character definition.
-- [ ] Preserve existing decay behavior.
-- [ ] Add deterministic transition tests.
-- [ ] Add state snapshot/restore.
-- [ ] Define bounds for every numeric state.
-- [ ] Define what happens when state becomes stale.
-
-## Example
-
-```python
-state = CharacterState(
-    mood="happy",
-    energy=0.75,
-    affection=0.62,
-    trust=0.80,
-)
-
-relationship = RelationshipState(
-    familiarity=0.70,
-    trust=0.80,
-    attachment=0.45,
-)
-```
-
-Do not make the LLM responsible for storing these values.
+**Acceptance criteria**
+- A new contributor can identify the model integration path from the documentation.
 
 ---
 
-# 4. Phase 3 — Emotion Interpreter
+## MODEL-002 — Evaluate Qwen 7B candidates
 
-## Objective
+**Goal:** choose a concrete model rather than treating "Qwen 7B" as one behavior.
 
-Turn user input into structured signals without coupling the runtime to one implementation.
+**Candidates**
+- [ ] Qwen 2.5 7B GGUF candidate.
+- [ ] Qwen 3.x 7B-class candidate if compatible with the current runtime.
+- [ ] Other suitable Qwen 7B GGUF candidate if technically justified.
 
+**For each candidate record**
+- [ ] Exact model/revision.
+- [ ] Quantization.
+- [ ] Context length.
+- [ ] License.
+- [ ] GGUF source.
+- [ ] RAM/VRAM requirement.
+- [ ] Expected inference speed.
+- [ ] Known roleplay/Indonesian behavior.
+
+**Acceptance criteria**
+- One candidate is explicitly selected.
+- The old 3B model remains available for rollback.
+
+---
+
+## MODEL-003 — Install Qwen 7B Q4-class GGUF
+
+**Tasks**
+- [ ] Download model.
+- [ ] Verify file integrity.
+- [ ] Store model outside source-controlled files.
+- [ ] Update local model configuration.
+- [ ] Confirm model loads.
+- [ ] Run one minimal generation test.
+
+**Acceptance criteria**
+- Model loads and generates a valid response through the existing runtime.
+
+**Do not**
+- Commit multi-GB model files.
+- Remove the old working model yet.
+
+---
+
+## MODEL-004 — Retest context budgeting
+
+**Goal:** replace assumptions inherited from the 3B configuration with measured values.
+
+**Current baseline**
 ```text
-User message
-    ↓
-EmotionInterpreter
-    ↓
-EmotionResult
+system:   ~2000
+history:  ~1500
+response:  ~800
 ```
 
-## Example output
+**Tasks**
+- [ ] Measure actual system prompt size.
+- [ ] Measure character prompt size.
+- [ ] Measure state injection.
+- [ ] Measure memory injection.
+- [ ] Measure history.
+- [ ] Determine actual model context limit.
+- [ ] Define response reserve.
+- [ ] Add safety headroom.
+- [ ] Update `config.py`.
+- [ ] Test short conversation.
+- [ ] Test long conversation.
+- [ ] Test memory-heavy conversation.
+- [ ] Test truncation behavior.
 
-```json
-{
-  "emotion": "joy",
-  "valence": 0.82,
-  "arousal": 0.63,
-  "intent": "social_connection",
-  "confidence": 0.91
-}
+**Acceptance criteria**
+- No expected prompt path overflows.
+- Character-critical instructions remain intact.
+- History truncation is deterministic.
+- Memory injection is bounded.
+
+---
+
+## MODEL-005 — Seven-day character evaluation
+
+**Goal:** collect concrete failures instead of relying on vague impressions.
+
+**For every significant failure record**
+```text
+Date:
+Conversation/trigger:
+Expected behavior:
+Actual behavior:
+Category:
+Severity:
+Reproducible:
+Potential runtime/prompt cause:
 ```
 
-## Tasks
+**Categories**
+- [ ] Character leakage.
+- [ ] Assistant-style leakage.
+- [ ] Unnecessary disclaimer/refusal.
+- [ ] Stiff/translated Indonesian.
+- [ ] Personality inconsistency.
+- [ ] Emotional inconsistency.
+- [ ] Memory/state inconsistency.
+- [ ] Other.
 
-- [ ] Define `EmotionResult`.
-- [ ] Wrap the existing keyword/rule analyzer behind the interface.
-- [ ] Add confidence.
-- [ ] Add neutral/unknown fallback.
+**Acceptance criteria**
+- Approximately one week of normal use has been observed.
+- Failures are specific enough to reproduce or investigate.
+- No LoRA decision is made from subjective impressions alone.
+
+---
+
+# 🔴 2. State Versioning & Recovery
+
+## STATE-002 — Document `state.json` schema
+
+**Tasks**
+- [ ] List every top-level field.
+- [ ] Document field types.
+- [ ] Identify required vs optional fields.
+- [ ] Identify fields related to relationship state.
+- [ ] Identify fields related to emotion/mode.
+- [ ] Record current schema version.
+
+---
+
+## STATE-003 — Version future schema changes
+
+**Goal:** establish a repeatable migration pattern.
+
+**Tasks**
+- [ ] Confirm existing v1 → v2 migration pattern.
+- [ ] Extract reusable migration approach.
+- [ ] Define v3 migration convention.
+- [ ] Add validation before migration.
+- [ ] Write migrated state to a safe target.
+- [ ] Preserve original on failure.
+- [ ] Add migration tests.
+
+**Acceptance criteria**
+- A schema migration can fail without destroying the original state.
+
+---
+
+# 🟠 3. Phase 6 — Emotional Depth
+
+## EMO-001 — Relationship drift detection
+
+**Goal:** distinguish temporary mood changes from gradual relationship changes.
+
+**Tasks**
+- [ ] Inventory current relationship/state variables.
+- [ ] Identify variables allowed to drift.
+- [ ] Define drift threshold.
+- [ ] Define observation window.
+- [ ] Define positive drift.
+- [ ] Define negative drift.
+- [ ] Define neutral/noise behavior.
 - [ ] Add deterministic tests.
-- [ ] Later benchmark a small classifier.
-- [ ] Only later evaluate LLM-assisted emotion interpretation.
+- [ ] Add debug logging.
 
-## Rule
+**Acceptance criteria**
+- Repeated interaction patterns can produce gradual relationship changes.
+- A single unusual message cannot permanently distort relationship state.
 
-The runtime should not care whether emotion came from:
+---
 
+## REL-001 — Define conflict triggers
+
+**Goal:** create explicit, testable conflict detection.
+
+**Tasks**
+- [ ] Inventory current emotional signals.
+- [ ] Define conflict categories.
+- [ ] Define severity levels.
+- [ ] Define false-positive examples.
+- [ ] Define repeated-trigger behavior.
+- [ ] Add test fixtures.
+
+**Example**
 ```text
-rules
-small model
-LLM
-hybrid
+conflict signal
+    ↓
+severity ∈ [0..1]
+    ↓
+relationship impact
+```
+
+**Acceptance criteria**
+- Conflict detection has documented rules/examples.
+- Tests cover both positive and negative cases.
+
+---
+
+## REL-002 — Conflict cooldown
+
+**Goal:** prevent immediate emotional reset after conflict.
+
+**Tasks**
+- [ ] Define cooldown state.
+- [ ] Define duration.
+- [ ] Define decay during cooldown.
+- [ ] Define repeated-conflict behavior.
+- [ ] Persist cooldown state if necessary.
+- [ ] Add tests.
+
+---
+
+## REL-003 — Recovery curve
+
+**Goal:** model gradual recovery.
+
+**Tasks**
+- [ ] Identify affected state variables.
+- [ ] Define initial recovery value.
+- [ ] Define recovery rate.
+- [ ] Define modifiers.
+- [ ] Prevent instant reset.
+- [ ] Add tests for multiple time steps.
+
+**Example**
+```text
+conflict
+   ↓
+negative state
+   ↓
+cooldown
+   ↓
+gradual recovery
+   ↓
+normal baseline
 ```
 
 ---
 
-# 5. Phase 4 — Memory 2.0
+## REL-004 — Reconciliation
 
-## Objective
+**Goal:** distinguish apology/reassurance from actual relationship recovery.
 
-Turn memory into a first-class subsystem rather than an incidental prompt feature.
-
-## Memory model
-
-```text
-Memory
-├── id
-├── type
-├── content
-├── importance
-├── confidence
-├── created_at
-├── last_accessed_at
-├── source
-├── tags
-└── embedding (optional)
-```
-
-## Types
-
-```text
-FACT
-PREFERENCE
-EVENT
-RELATIONSHIP
-EMOTIONAL
-CONVERSATION
-LORE
-```
-
-## Tasks
-
-- [ ] Define memory schema.
-- [ ] Define memory repository interface.
-- [ ] Preserve current persistence during migration.
-- [ ] Add importance scoring.
-- [ ] Add recency scoring.
-- [ ] Add retrieval/ranking interface.
-- [ ] Add memory deduplication.
-- [ ] Add memory update/forget behavior.
-- [ ] Add memory tests.
-- [ ] Benchmark JSON persistence before moving storage.
-- [ ] Move to SQLite when justified.
-- [ ] Add embeddings only after lexical/rule retrieval has a baseline.
-
-## Retrieval example
-
-```text
-query:
-"Do you remember what coffee I like?"
-
-             ↓
-
-MemoryRetriever
-   ├── preference matches
-   ├── semantic similarity
-   ├── recency
-   └── importance
-
-             ↓
-
-Top relevant memories
-             ↓
-
-Context Builder
-```
-
-### Inspiration
-
-RisuAI's architecture explicitly separates memory systems, embeddings, lorebook, model integrations, and chat processing. Its repository structure is a useful example of keeping these concerns distinct. citeturn0search4
-
-SillyTavern's lorebook model also demonstrates an important optimization: contextual information can be activated only when relevant rather than permanently injecting every piece of lore. citeturn0search2
-
-### Design lesson for Veil
-
-Use:
-
-```text
-Always-on character identity
-+
-Relevant dynamic memory
-+
-Relevant lore
-```
-
-instead of:
-
-```text
-Everything ever remembered
-```
+**Tasks**
+- [ ] Define reconciliation triggers.
+- [ ] Define required conditions.
+- [ ] Define partial recovery.
+- [ ] Define full recovery.
+- [ ] Define repeated failed reconciliation.
+- [ ] Add tests.
 
 ---
 
-# 6. Phase 5 — Context Builder
+## EMO-002 — Long-term emotional arcs
 
-## Objective
+**Goal:** represent slow relationship tendencies without rewriting the character's core personality.
 
-Create one explicit place responsible for deciding what the LLM sees.
+**Tasks**
+- [ ] Decide whether attachment traits are character-level, relationship-level, or both.
+- [ ] Define slow-changing variables.
+- [ ] Separate attachment from current mood.
+- [ ] Define update rules.
+- [ ] Define decay.
+- [ ] Persist state.
+- [ ] Add long-horizon tests.
 
-## Target
-
-```text
-                    ContextBuilder
-                         │
-       ┌─────────────────┼─────────────────┐
-       ↓                 ↓                 ↓
- Character            State             Memories
-       │                 │                 │
-       └─────────────────┼─────────────────┘
-                         ↓
-                  Recent Conversation
-                         ↓
-                    Tool Results
-                         ↓
-                    User Message
-                         ↓
-                    Final Context
-```
-
-## Tasks
-
-- [ ] Define `ContextRequest`.
-- [ ] Define `ContextResult`.
-- [ ] Separate system/persona context from dynamic context.
-- [ ] Add token budgeting.
-- [ ] Add memory ranking.
-- [ ] Add optional lore injection.
-- [ ] Add context debugging/logging.
-- [ ] Add snapshot tests for generated context.
-- [ ] Ensure secrets/internal tool details never enter character-facing context.
-
-## Important constraint
-
-Context size is a resource.
-
-A huge permanent character prompt can reduce the room available for conversation history and relevant memories. SillyTavern's documentation explicitly highlights this tradeoff. citeturn0search7
-
-So Veil should eventually track:
-
-```text
-context budget
-├── character
-├── state
-├── memories
-├── history
-├── tools
-└── response reserve
-```
+**Do not**
+- Replace the existing personality definition with mutable emotional state.
+- Let temporary mood permanently rewrite character identity.
 
 ---
 
-# 7. Phase 6 — Conversation Coordinator
+## PREF-001 — User preference learning
 
-## Objective
+**Goal:** learn stable user preferences over repeated interactions.
 
-Replace an oversized orchestration object with an explicit pipeline.
+**Tasks**
+- [ ] Define explicit preference.
+- [ ] Define inferred preference.
+- [ ] Define confidence.
+- [ ] Define confirmation threshold.
+- [ ] Define correction/update behavior.
+- [ ] Define forgetting behavior.
+- [ ] Integrate with future memory subsystem.
+- [ ] Add tests.
 
-## Suggested API
+---
 
+# 🟠 4. Phase 8 — Memory Evolution
+
+## MEM-001 — Establish current retrieval baseline
+
+**Goal:** measure keyword retrieval before replacing it.
+
+**Tasks**
+- [ ] Collect representative memory queries.
+- [ ] Mark expected relevant memories.
+- [ ] Run current keyword retrieval.
+- [ ] Record recall/precision where practical.
+- [ ] Record false positives.
+- [ ] Record semantic misses.
+
+**Acceptance criteria**
+- A fixed memory benchmark exists.
+
+---
+
+## MEM-002 — Research local embedding models
+
+**Goal:** identify an embedding model suitable for the target environment.
+
+**Tasks**
+- [ ] Find small embedding candidates.
+- [ ] Check Indonesian support.
+- [ ] Check multilingual performance.
+- [ ] Check license.
+- [ ] Check RAM/VRAM requirements.
+- [ ] Measure embedding latency.
+- [ ] Test on Veil-specific memory examples.
+- [ ] Compare against keyword baseline.
+
+**Decision gate**
+- [ ] Continue only if embeddings show meaningful retrieval improvement.
+
+---
+
+## MEM-003 — Embedding abstraction
+
+**Goal:** prevent the memory engine from becoming tied to one embedding implementation.
+
+**Example interface**
 ```python
-result = conversation.process(
-    character=stella,
-    user_message="Aku hari ini capek banget."
-)
-```
-
-Internally:
-
-```text
-process()
- │
- ├─ interpret emotion
- ├─ update relationship
- ├─ update state
- ├─ retrieve memories
- ├─ execute required tools
- ├─ build context
- ├─ call LLM
- ├─ evaluate response
- └─ persist state/memory
-```
-
-## Tasks
-
-- [ ] Introduce coordinator.
-- [ ] Extract orchestration from `PersonalityCore`.
-- [ ] Keep individual services independently callable.
-- [ ] Add pipeline tests.
-- [ ] Add structured tracing for each stage.
-
----
-
-# 8. Phase 7 — LLM Runtime Abstraction
-
-## Objective
-
-Make the model replaceable.
-
-```text
-LLMProvider
-    ├── LlamaCppProvider
-    ├── OpenAICompatibleProvider
-    └── FutureProvider
-```
-
-## Interface example
-
-```python
-class LLMProvider(Protocol):
-    def generate(self, request: GenerationRequest) -> GenerationResult:
+class Embedder(Protocol):
+    def embed(self, text: str) -> list[float]:
         ...
 ```
 
-## Tasks
-
-- [ ] Define provider interface.
-- [ ] Wrap current llama.cpp integration.
-- [ ] Normalize generation parameters.
-- [ ] Normalize errors/timeouts.
-- [ ] Add mock provider for tests.
-- [ ] Add provider capability metadata.
-- [ ] Ensure character/memory/state code knows nothing about provider internals.
+**Tasks**
+- [ ] Define interface.
+- [ ] Add local implementation.
+- [ ] Add mock implementation.
+- [ ] Define embedding metadata/version.
+- [ ] Add tests.
 
 ---
 
-# 9. Phase 8 — Response Evaluator
+## MEM-004 — Semantic memory retrieval
 
-## Objective
+**Goal:** retrieve memories by meaning rather than exact keywords.
 
-A character engine should be able to notice when a generated answer violates its own state/personality.
-
-## Evaluation dimensions
-
+**Target flow**
 ```text
-Personality consistency
-Speech style
-Lore consistency
-Memory consistency
-State consistency
-Safety / boundary rules
+query
+  ↓
+embedding
+  ↓
+candidate retrieval
+  ↓
+similarity
+  + importance
+  + recency
+  + relationship relevance
+  ↓
+rank
+  ↓
+top-K memories
 ```
 
-## Example
+**Tasks**
+- [ ] Define similarity threshold.
+- [ ] Define top-K.
+- [ ] Add hybrid keyword + semantic retrieval.
+- [ ] Add ranking.
+- [ ] Add memory filtering.
+- [ ] Add tests.
+- [ ] Benchmark against MEM-001.
 
-```json
-{
-  "personality": 0.91,
-  "speech_style": 0.88,
-  "lore": 1.0,
-  "memory": 0.76,
-  "state": 0.93,
-  "overall": 0.89,
-  "regenerate": false
-}
-```
-
-## Tasks
-
-- [ ] Define evaluator interface.
-- [ ] Start with deterministic checks where possible.
-- [ ] Build a small benchmark set.
-- [ ] Add model-based evaluation only where useful.
-- [ ] Add bounded regeneration.
-- [ ] Log evaluation failures.
-- [ ] Track regressions across model changes.
+**Acceptance criteria**
+- Semantic/hybrid retrieval demonstrably improves the benchmark.
+- Entire memory store is never injected by default.
 
 ---
 
-# 10. Phase 9 — Character Benchmark
+## MEM-005 — Emotional ↔ factual memory cross-reference
 
-## Objective
+**Goal:** preserve both factual information and its emotional context.
 
-Stop judging the character only by "this response feels good."
-
-Create repeatable scenarios.
-
-## Benchmark categories
-
-### Personality
-
+**Example**
 ```text
-User: "Kamu bisa serius sedikit nggak?"
-Expected:
-- remains recognizably playful/warm
-- adapts tone without losing identity
+FACT:
+User likes coffee.
+
+EMOTIONAL:
+User talked about coffee during a stressful event.
 ```
 
-### Memory
-
-```text
-Turn 1:
-User says a persistent preference.
-
-Turn 50:
-Ask indirectly about that preference.
-
-Expected:
-Relevant memory is retrieved.
-```
-
-### Relationship
-
-```text
-Repeated positive interactions
-        ↓
-trust/affection should evolve
-```
-
-### State
-
-```text
-Low energy
-        ↓
-response style changes
-        ↓
-does not rewrite core personality
-```
-
-### Lore
-
-```text
-User asks about known character/world facts.
-Expected:
-No contradiction with character definition.
-```
-
-## Tasks
-
-- [ ] Create benchmark JSON/YAML format.
-- [ ] Add 20–50 initial scenarios.
-- [ ] Add automated scoring where practical.
-- [ ] Record baseline before model tuning.
-- [ ] Re-run after architecture changes.
+**Tasks**
+- [ ] Define memory relationships.
+- [ ] Define confidence.
+- [ ] Prevent emotional memories from overwriting facts.
+- [ ] Add retrieval behavior.
+- [ ] Add tests.
 
 ---
 
-# 11. Phase 10 — Fine-Tuning Experiments
+## MEM-006 — Dream/consolidation cycle
 
-## Do not start this phase early.
+**Goal:** consolidate redundant memories while protecting important history.
 
-Only begin after the runtime has a measurable baseline.
+**Tasks**
+- [ ] Define consolidation trigger.
+- [ ] Define candidate selection.
+- [ ] Define merge rules.
+- [ ] Define importance adjustment.
+- [ ] Define conflict resolution.
+- [ ] Define protected memories.
+- [ ] Implement dry-run mode.
+- [ ] Test dry-run output.
+- [ ] Only then consider automatic writes.
 
-Compare:
+**Acceptance criteria**
+- Consolidation can be inspected before mutating persistent memory.
+- Protected memories cannot be silently deleted.
 
+---
+
+# 🟡 5. Phase 7 — Platform
+
+## PLATFORM-001 — Select one platform
+
+**Candidates**
+- [ ] Web UI
+- [ ] WhatsApp
+- [ ] Discord
+
+**Decision criteria**
+- actual usage
+- implementation cost
+- authentication complexity
+- 1-on-1 vs multi-user semantics
+- persistence requirements
+- maintenance burden
+
+**Tasks**
+- [ ] Compare candidates.
+- [ ] Choose one.
+- [ ] Document decision.
+- [ ] Move the others to backlog.
+
+**Do not**
+- Implement all three simultaneously.
+
+---
+
+## PLATFORM-002 — Audit conversation scope
+
+**Goal:** prevent a multi-user platform from corrupting personal relationship state.
+
+**Current assumption**
 ```text
-A: Base model + prompt
-
-B: Base model + Character Runtime
-
-C: LoRA/SFT model + Character Runtime
+User
+  ↕
+PersonalityCore
 ```
 
-Measure:
-
+**Potential model**
 ```text
-personality
-style
-lore
-memory
-state
-response quality
-latency
-VRAM/RAM
+User A ─┐
+User B ─┼─ Conversation/Session ─ Character
+User C ─┘
 ```
 
-## Tasks
+**Tasks**
+- [ ] Identify 1-on-1 assumptions.
+- [ ] Define user identity.
+- [ ] Define conversation/session identity.
+- [ ] Define memory ownership.
+- [ ] Define relationship ownership.
+- [ ] Add multi-user tests if applicable.
 
-- [ ] Freeze benchmark dataset.
-- [ ] Build training dataset pipeline.
-- [ ] Remove duplicated/low-quality samples.
-- [ ] Create SFT baseline.
-- [ ] Test LoRA.
+---
+
+## PLATFORM-003 — TTS backlog
+
+**Tasks**
+- [ ] Define TTS adapter interface.
+- [ ] Define voice configuration.
+- [ ] Define emotion → voice mapping.
+- [ ] Measure latency.
+- [ ] Implement only after platform/core priority is stable.
+
+---
+
+## PLATFORM-004 — Mobile app evaluation
+
+**Tasks**
+- [ ] Validate actual need.
+- [ ] Compare Web/PWA vs native.
+- [ ] Estimate maintenance cost.
+- [ ] Make explicit go/no-go decision.
+
+---
+
+# 🟢 6. Fine-Tuning — Stretch Goal
+
+## TUNE-001 — Establish trigger
+
+**Do not start training yet.**
+
+Training is allowed only when:
+
+```text
+7B model
+ +
+prompt/context optimization
+ +
+runtime improvements
+ ↓
+specific persistent failures
+```
+
+**Tasks**
+- [ ] Review seven-day failure log.
+- [ ] Categorize failures.
+- [ ] Attempt prompt fixes.
+- [ ] Attempt context fixes.
+- [ ] Attempt runtime/state fixes.
+- [ ] Document failures that remain.
+
+**Acceptance criteria**
+- Each proposed training target has a concrete example and measurable failure condition.
+
+---
+
+## TUNE-002 — Stella dialogue dataset
+
+**Tasks**
+- [ ] Collect high-quality dialogue.
+- [ ] Keep Indonesian/casual style consistent.
+- [ ] Remove contradictory character behavior.
+- [ ] Remove accidental assistant-style answers.
+- [ ] Deduplicate.
+- [ ] Separate training and evaluation sets.
+- [ ] Preserve a held-out benchmark.
+
+---
+
+## TUNE-003 — LoRA experiment
+
+**Tasks**
+- [ ] Define target behavior.
+- [ ] Select base model.
+- [ ] Define LoRA configuration.
+- [ ] Train small experiment.
 - [ ] Compare against untuned model.
-- [ ] Record whether tuning actually improves results.
-- [ ] Keep adapters outside core runtime.
+- [ ] Run fixed benchmark.
+- [ ] Measure resource requirements.
+- [ ] Decide keep/reject.
 
-## CPT
-
-Only investigate CPT if the project has a sufficiently large and coherent domain/style corpus.
-
-Do not use CPT merely because "AI character projects usually tune models."
+**Acceptance criteria**
+- LoRA is retained only if it improves the target failure without unacceptable regressions.
 
 ---
 
-# 12. Phase 11 — Voice
+## TUNE-004 — CPT
 
-## Tasks
+- [x] Keep out of current scope.
 
-- [ ] Define TTS adapter.
-- [ ] Define STT adapter.
-- [ ] Add voice event model.
-- [ ] Map emotion/intensity to voice parameters.
-- [ ] Support interruption/cancellation.
-- [ ] Keep voice outside the core conversation engine.
-
-Target:
-
-```text
-LLM Response
-    ↓
-Emotion / Expression Metadata
-    ↓
-TTS Adapter
-    ↓
-Audio
-```
+**Reason:** the project is optimizing character behavior/conditioning, not adding missing domain knowledge.
 
 ---
 
-# 13. Phase 12 — VTuber Runtime
+# ⚪ 7. Cross-Cutting Validation
 
-## Tasks
+## TEST-001 — Character regression suite
 
-- [ ] Define expression/action event schema.
-- [ ] Add avatar adapter interface.
-- [ ] Prototype Live2D adapter.
-- [ ] Prototype VRM adapter.
-- [ ] Map emotional state to expressions.
-- [ ] Add idle behavior.
-- [ ] Add initiative events.
-- [ ] Keep avatar failures isolated from conversation.
-
-Example:
-
-```json
-{
-  "emotion": "embarrassed",
-  "intensity": 0.72,
-  "expression": "blush",
-  "action": "look_away"
-}
-```
+**Tasks**
+- [ ] Personality consistency.
+- [ ] Indonesian naturalness.
+- [ ] Emotional responsiveness.
+- [ ] Relationship behavior.
+- [ ] Memory recall.
+- [ ] State persistence.
+- [ ] Character leakage.
+- [ ] Assistant leakage.
+- [ ] Long conversation behavior.
 
 ---
 
-# 14. Phase 13 — Platform Adapters
+## TEST-002 — State regression
 
-Potential adapters:
-
-```text
-Veil Core
- ├── CLI
- ├── Web
- ├── Discord
- ├── Telegram
- ├── TTS
- ├── Live2D
- └── VRM
-```
-
-## Tasks
-
-- [ ] Keep platform adapters thin.
-- [ ] Do not duplicate character logic per platform.
-- [ ] Normalize incoming messages.
-- [ ] Normalize outgoing responses/events.
+- [ ] Save/load state.
+- [ ] Backup/restore.
+- [ ] Schema migration.
+- [ ] Failed migration recovery.
+- [ ] Relationship persistence.
 
 ---
 
-# 15. Similar Projects — What We Should Learn From
+## TEST-003 — Memory regression
 
-## SillyTavern
+- [ ] Keyword baseline.
+- [ ] Semantic retrieval.
+- [ ] Hybrid retrieval.
+- [ ] Memory ranking.
+- [ ] Memory persistence.
+- [ ] Consolidation dry-run.
 
-Useful concepts:
+---
 
-- character cards
-- persona separation
-- lore/world info
-- context budgeting
-- prompt manager
-- provider flexibility
+# ⚪ 8. Backlog / Non-Goals
 
-SillyTavern treats character definitions as reusable data and emphasizes context allocation because permanent character information competes with conversation history for the model's context window. citeturn0search0turn0search7
+- [ ] CI/CD.
+- [ ] Separate `ARCHITECTURE.md`.
+- [ ] Full multi-platform rollout.
+- [ ] Mobile app before need is proven.
+- [ ] TTS-first development.
+- [ ] CPT.
+- [ ] Large vector database before benchmark evidence.
+- [ ] Full autonomous-agent system.
+- [ ] Complex multi-agent orchestration.
 
-**Veil adaptation:**
+---
 
-```text
-Character Card
-      ↓
-CharacterDefinition
-      ↓
-ContextBuilder
-```
+# Definition of Done — Current Roadmap
 
-Do not copy its entire frontend/prompt architecture.
+The roadmap's current core milestone is complete when:
 
-Official repository/docs:
-https://github.com/SillyTavern/SillyTavern
-https://docs.sillytavern.app/
+- [ ] State has a tested backup/export path.
+- [ ] 7B model has been evaluated against the 3B baseline.
+- [ ] Context budgeting has been recalibrated using measurements.
+- [ ] A concrete seven-day behavior log exists.
+- [ ] Emotional relationship dynamics have explicit testable transitions.
+- [ ] Semantic memory has been benchmarked against keyword retrieval.
+- [ ] The selected memory approach is evidence-based.
+- [ ] One platform has been selected rather than prematurely implementing several.
+- [ ] Fine-tuning decisions are based on documented persistent failures.
+- [ ] Regression benchmarks exist for character, state, and memory.
 
-## RisuAI
+---
 
-Useful concepts:
+# Immediate Next Actions
 
-- character cards
-- lorebook
-- long-term memory
-- multiple model providers
-- embeddings
-- plugins
-- TTS
-- emotion presentation
-
-RisuAI's current architecture separates storage, processing, memory, model integrations, embeddings, lorebook, and adapters, which is close to the direction Veil needs. citeturn0search4turn0search5
-
-**Veil adaptation:**
+Follow this exact order unless `PLAN.md` changes:
 
 ```text
-Storage
+STATE-001
    ↓
-Memory
+BASE-001
    ↓
-Processing
+MODEL-001
    ↓
-Model
+MODEL-002
    ↓
-Presentation adapters
+MODEL-003
+   ↓
+MODEL-004
+   ↓
+MODEL-005
+   ↓
+EMO-001 / REL-001..004
+   ↓
+MEM-001
+   ↓
+MEM-002
+   ↓
+MEM-003 / MEM-004
+   ↓
+MEM-005 / MEM-006
+   ↓
+PLATFORM-001
+   ↓
+TUNE-001
+   ↓
+TUNE-002 / TUNE-003
 ```
 
-Official repository:
-https://github.com/kwaroran/Risuai
-
-## Character Card Ecosystem
-
-Character cards are worth supporting eventually because they provide a portable way to represent character identity and prompt-oriented metadata. The V2 specification includes fields such as system prompt, post-history instructions, alternate greetings, character book, tags, creator metadata, and extensions. citeturn0search6
-
-**Future Veil feature:**
-
-```text
-Veil CharacterDefinition
-       ↕
-Character Card Import/Export
-```
-
-This should be an adapter, not the internal runtime schema.
-
----
-
-# 16. Code Reuse Policy
-
-We can absolutely study similar open-source projects and reproduce useful ideas.
-
-However:
-
-- [ ] Prefer architecture/pattern inspiration over copying large code sections.
-- [ ] Check the repository license before reusing implementation code.
-- [ ] Preserve required attribution/license notices when code is actually reused.
-- [ ] Keep copied code isolated and documented.
-- [ ] Prefer reimplementing small interfaces ourselves when the concept is simple.
-- [ ] Do not copy proprietary or unclear-license code.
-
-For Veil, the preferred approach is:
-
-```text
-Study project
-     ↓
-Understand pattern
-     ↓
-Design Veil-specific interface
-     ↓
-Implement independently
-     ↓
-Benchmark
-```
-
-rather than:
-
-```text
-Copy source
-    ↓
-Rename classes
-    ↓
-Hope architecture works
-```
-
----
-
-# 17. Proposed Final Architecture
-
-Once the migration is mature:
-
-```text
-veil/
-├── characters/
-│   ├── loader.py
-│   ├── schema.py
-│   └── stella/
-│       ├── character.yaml
-│       ├── personality.yaml
-│       ├── lore.yaml
-│       └── rules.yaml
-│
-├── runtime/
-│   ├── conversation.py
-│   ├── context.py
-│   ├── pipeline.py
-│   └── events.py
-│
-├── state/
-│   ├── character_state.py
-│   ├── relationship.py
-│   ├── emotion.py
-│   └── decay.py
-│
-├── memory/
-│   ├── models.py
-│   ├── repository.py
-│   ├── extractor.py
-│   ├── retriever.py
-│   ├── ranking.py
-│   └── consolidation.py
-│
-├── llm/
-│   ├── base.py
-│   ├── llama_cpp.py
-│   └── openai_compatible.py
-│
-├── cognition/
-│   ├── tools.py
-│   └── executor.py
-│
-├── evaluation/
-│   ├── evaluator.py
-│   ├── benchmarks.py
-│   └── scoring.py
-│
-└── adapters/
-    ├── cli/
-    ├── web/
-    ├── discord/
-    ├── tts/
-    ├── stt/
-    ├── live2d/
-    └── vrm/
-```
-
-The exact directory names are not mandatory. The **boundaries** are.
-
----
-
-# 18. Milestone Definition
-
-## M1 — Generic Character
-
-Done when:
-
-```text
-Stella + ExampleCharacter
-```
-
-can run through the same runtime without modifying core source code.
-
-## M2 — Persistent Character
-
-Done when:
-
-```text
-restart process
-    ↓
-state survives
-memory survives
-relationship survives
-```
-
-## M3 — Context-Aware Character
-
-Done when the runtime retrieves only relevant memories/lore and builds a measurable context.
-
-## M4 — Consistent Character
-
-Done when benchmark results demonstrate stable personality, lore, memory, and state behavior.
-
-## M5 — Model Independent
-
-Done when at least two LLM backends can use the same Character Runtime.
-
-## M6 — Tunable Character
-
-Done when LoRA/SFT can be evaluated against the untuned baseline without changing runtime architecture.
-
-## M7 — VTuber Ready
-
-Done when a frontend can consume:
-
-```text
-text
-emotion
-intensity
-expression
-action
-```
-
-without knowing how Veil generated them.
-
----
-
-# 19. Immediate Next Actions
-
-Do these first. Everything else can wait.
-
-- [ ] Audit current repository against this TODO.
-- [ ] Run existing tests and record baseline.
-- [ ] Identify Stella-specific coupling.
-- [ ] Design `CharacterDefinition`.
-- [ ] Design `CharacterState`.
-- [ ] Design `RelationshipState`.
-- [ ] Add second dummy character.
-- [ ] Refactor only after tests cover the current behavior.
-
-**Do not train the model yet.**
-
-The first win is proving that Veil can make two different characters behave differently using the same runtime.
+**Do not start LoRA before TUNE-001's decision gate is satisfied.**
