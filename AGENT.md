@@ -1,61 +1,48 @@
-# Veil 2.0 — Character Runtime Plan
+# AGENT.md — Veil Development Guide
 
-> Status: Planning
-> Goal: Rework Veil from a Stella-specific AI companion into a reusable character-first runtime for persistent roleplay characters and AI VTuber-style personalities.
+## Mission
 
-## 1. Product Direction
+Veil is being evolved into a reusable Character Runtime for persistent roleplay characters and AI VTuber-style personalities.
 
-Veil is a character runtime, not merely an LLM wrapper. The LLM provides language/reasoning; Veil owns character identity, memory, emotional state, relationships, continuity, behavior, and presentation-neutral runtime logic.
+The primary engineering goal is **character consistency and continuity**, not maximum model complexity.
 
-Core principles:
+Read `PLAN.md` before making architectural changes.
+
+## Core Principles
+
+1. Character logic must not depend on Stella.
+2. Character definitions are data; runtime behavior is code.
+3. Memory is external state, not model knowledge.
+4. Mutable emotional/relationship state must be separated from immutable character identity.
+5. LLM providers are replaceable backends.
+6. Fine-tuning is optional and must not be required by the runtime.
+7. Prefer measurable behavior over subjective claims of improvement.
+8. Keep the core runtime presentation-neutral.
+
+## Architecture Boundaries
+
+The intended subsystem boundaries are:
 
 ```text
-Character > model
-Memory > chat history
-State > static prompt
-Runtime > one-off chatbot
+Character Engine
+Memory Engine
+State / Emotion Engine
+Relationship Engine
+Cognition / Tool Engine
+Context Builder
+LLM Runtime
+Response Evaluator
 ```
 
-A character should remain recognizable when the underlying model changes.
+Avoid putting unrelated responsibilities into a single `PersonalityCore`-style god object.
 
-## 2. Target Architecture
+When adding a feature, decide which subsystem owns it before implementing it.
 
-```text
-                    VEIL RUNTIME
-                         |
-        +----------------+----------------+
-        |                |                |
-   Character         Memory           State / Emotion
-     Engine           Engine              Engine
-        |                |                |
-        +----------------+----------------+
-                         |
-                  Context Builder
-                         |
-                  Conversation Core
-                         |
-              +----------+----------+
-              |                     |
-         LLM Runtime          Cognition / Tools
-              |                     |
-              +----------+----------+
-                         |
-                 Response Evaluator
-                         |
-                  Runtime Response
-                         |
-              +----------+----------+
-              |          |          |
-             CLI        Web      VTuber/Voice
-```
+## Character System
 
-Core subsystems must be replaceable and independently testable.
+Do not hardcode Stella-specific identity, lore, or personality into generic runtime modules.
 
-## 3. Character Abstraction
-
-Remove Stella-specific assumptions from generic runtime code.
-
-Target structure:
+Prefer:
 
 ```text
 characters/
@@ -64,183 +51,132 @@ characters/
     personality.yaml
     lore.yaml
     rules.yaml
-  loader.py
 ```
 
-A character definition should contain:
+A new character should be loadable without modifying the runtime's core source code.
 
-- identity
-- personality traits
-- speech style
-- lore/world knowledge
-- behavioral rules
-- boundaries
-- relationship defaults
-- optional emotional configuration
+Stella is the reference character, not a special case.
 
-Stella becomes a character profile loaded by Veil, not the identity of Veil itself.
+## State
 
-## 4. Runtime State
-
-Separate immutable character definition from mutable interaction state.
-
-### Character definition
-
-Stable traits such as:
-
-- warmth
-- humor
-- curiosity
-- teasing
-- values
-- speech style
-
-### Character state
-
-Dynamic values such as:
-
-- mood
-- energy
-- affection
-- trust
-- attachment
-- comfort
-- current conversational context
-- temporary emotional intensity
-
-State transitions should be deterministic and testable where practical.
-
-## 5. Memory 2.0
-
-Memory remains external to the model.
-
-Recommended categories:
-
-- `fact` — stable user information
-- `preference` — likes/dislikes
-- `event` — meaningful past events
-- `relationship` — relationship-relevant history
-- `emotional` — emotionally salient interactions
-- `conversation` — short-term context
-- `lore` — character/world information
-
-Target pipeline:
+Distinguish:
 
 ```text
-Conversation
-    |
-Memory Extraction
-    |
-Validation / Importance
-    |
-Persistence
-    |
-Retrieval / Ranking
-    |
-Context Builder
+Character Definition = stable
+Character State       = mutable
 ```
 
-Keep the current persistence mechanism where practical. Move to SQLite and semantic/hybrid retrieval only when measurements justify the added complexity.
+Never persist temporary state by silently modifying the character definition.
 
-## 6. Emotion & Relationship
+State changes should be deterministic where practical and covered by unit tests.
 
-Keep the existing deterministic emotional system as a baseline, but move it behind clear service boundaries.
+## Memory
+
+Memory must remain independent from model weights and prompt text.
+
+Use explicit memory types such as:
 
 ```text
-User Input
-    |
-Emotion Interpreter
-    |
-Relationship Update
-    |
-State Transition
-    |
-Context
+fact
+preference
+event
+relationship
+emotional
+conversation
+lore
 ```
 
-The current keyword analyzer can remain as a cheap fallback. Future implementations may use a small classifier or LLM-assisted interpretation.
+Do not inject the entire memory database into prompts.
 
-Do not require a trained emotion model for the first milestone.
+Retrieval should select relevant memories using importance, recency, relationship relevance, semantic similarity, or a combination of these.
 
-## 7. Context Builder
+Do not introduce a vector database merely because it is fashionable. Establish a simpler baseline first.
 
-The LLM should receive only context relevant to the current turn:
+## Emotion
+
+The current rule/keyword-based emotion analysis is acceptable as a baseline.
+
+Do not remove a working deterministic fallback solely to replace it with an LLM.
+
+Any future emotion classifier should have a clear interface so the runtime can switch implementations without changing the rest of the pipeline.
+
+## LLM Integration
+
+LLM calls belong behind an abstraction.
+
+Core runtime code should not assume a specific provider, model name, context length, or inference engine.
+
+Local GGUF/llama.cpp support should remain viable.
+
+A model change must not require rewriting Character, Memory, State, or Relationship logic.
+
+## Prompt / Context Construction
+
+Build context explicitly:
 
 ```text
-Character Definition
-+ Current State
+Character
++ State
 + Relevant Memories
 + Recent Conversation
-+ Cognition / Tool Results
-+ Current User Input
-        |
-       LLM
++ Tool Results
++ User Input
 ```
 
-Never dump the entire memory store into every prompt.
+Do not scatter prompt fragments throughout unrelated modules.
 
-## 8. LLM Abstraction
+Prefer one observable context-building stage.
 
-Veil must not depend on one model family.
+Do not place internal tool implementation details into the character's visible response.
 
-Provide a stable interface for local and remote backends, such as:
+## Fine-Tuning
 
-- llama.cpp / GGUF
-- OpenAI-compatible APIs
-- other local inference servers
+Do not add CPT, SFT, LoRA, DPO, or other tuning infrastructure to the runtime until a baseline has been measured.
 
-Model fine-tuning is optional and must never be a runtime requirement.
+Required baseline components:
 
-## 9. Fine-Tuning Strategy
+- character definition
+- memory
+- state
+- context builder
+- response evaluator
 
-Do **not** begin with CPT/SFT/LoRA.
+Training experiments belong under a separate training/evaluation area and must not make runtime execution dependent on training artifacts.
 
-First establish a baseline using:
+## Evaluation
 
-1. character definition
-2. memory
-3. state
-4. context construction
-5. response evaluation
+Every major architectural change should have a measurable test or benchmark.
 
-Only then benchmark tuning.
+At minimum, evaluate:
 
-Possible later path:
-
-```text
-Character conversations
-        |
-Dataset cleaning
-        |
-SFT / LoRA experiment
-        |
-Character consistency benchmark
-        |
-Optional character adapter
-        |
-Veil LLM backend
-```
-
-CPT should only be considered when there is a clear domain/style corpus large enough to justify continued pretraining.
-
-## 10. Response Evaluation
-
-Add a lightweight evaluator after generation.
-
-Evaluate:
-
-- character consistency
-- speech-style consistency
+- personality consistency
+- speech style
 - lore consistency
 - state consistency
 - memory consistency
-- unwanted prompt/model drift
+- regression against previous behavior
 
-The evaluator may request regeneration, but retries must be bounded.
+Avoid relying only on a few hand-picked conversations.
 
-## 11. VTuber Readiness
+## Testing Rules
 
-The runtime should eventually be able to emit structured response metadata:
+Prefer small deterministic tests for:
+
+- state transitions
+- decay
+- relationship updates
+- memory ranking
+- character loading
+- prompt/context assembly
+- serialization
+
+LLM-dependent tests should be separated from deterministic unit tests.
+
+Network/model availability must not be required for the core test suite.
+
+## VTuber / Voice Compatibility
+
+The runtime may eventually emit structured metadata such as:
 
 ```json
 {
@@ -252,119 +188,108 @@ The runtime should eventually be able to emit structured response metadata:
 }
 ```
 
-This allows later adapters for:
+Do not couple this metadata to a specific avatar engine.
 
-- TTS
-- STT
-- Live2D
-- VRM
-- streaming overlays
-- Discord/Telegram/Web clients
+Live2D, VRM, TTS, STT, streaming, Web, and messaging integrations belong in adapters.
 
-The core runtime must remain usable without an avatar.
+## Dependency Rules
 
-## 12. Migration Phases
+Before adding a dependency:
 
-### Phase 0 — Architecture Freeze
+1. Check whether the standard library or an existing dependency is sufficient.
+2. Check whether the dependency is necessary for the current milestone.
+3. Prefer small, maintained dependencies.
+4. Avoid infrastructure that is not yet justified by measurements.
 
-- Document subsystem boundaries and contracts.
-- Add/repair tests around existing behavior.
-- Avoid unrelated feature work while core boundaries are changing.
+## Refactoring Rules
 
-### Phase 1 — Character Runtime
+When refactoring existing code:
 
-- Introduce generic character schema.
-- Extract Stella into a character profile.
-- Remove Stella-specific imports from generic core modules.
-- Add character loader and validation.
+1. Preserve working behavior where practical.
+2. Add tests before changing fragile logic.
+3. Make one architectural boundary change at a time.
+4. Avoid mixing unrelated feature work with core refactors.
+5. Remove old code only after its replacement is verified.
 
-### Phase 2 — State & Relationship Service
+Do not perform a giant rewrite just to make the directory structure look cleaner.
 
-- Separate identity from mutable state.
-- Extract state transitions from `PersonalityCore`.
-- Preserve useful existing decay and relationship behavior.
-- Add deterministic unit tests.
+## Git / Change Hygiene
 
-### Phase 3 — Memory 2.0
+Keep commits focused and descriptive.
 
-- Define unified memory schema.
-- Keep emotional and factual memories distinct.
-- Add retrieval/ranking interfaces.
-- Introduce semantic retrieval only after a measurable baseline.
+Recommended prefixes:
 
-### Phase 4 — Conversation / Context Pipeline
+```text
+feat:
+fix:
+refactor:
+test:
+docs:
+chore:
+```
 
-- Introduce a dedicated conversation coordinator.
-- Build context through explicit stages.
-- Keep tools/cognition separate from character-facing output.
-- Make context assembly independently testable.
+Examples:
 
-### Phase 5 — Character Consistency
+```text
+refactor: extract character definition from personality core
+feat: add generic character loader
+test: cover relationship state transitions
+docs: define Veil 2.0 runtime architecture
+```
 
-- Add evaluator interface.
-- Build a small benchmark dataset.
-- Measure personality, lore, state, and memory consistency.
-- Add bounded regeneration.
+Do not commit generated model files, secrets, API keys, local databases, or machine-specific artifacts.
 
-### Phase 6 — Model Layer
+## Security
 
-- Formalize the LLM backend interface.
-- Keep llama.cpp working.
-- Add another backend only when useful for comparison.
+Never commit:
 
-### Phase 7 — Training Experiments
+- API keys
+- tokens
+- passwords
+- private credentials
+- personal access tokens
+- private model artifacts unless explicitly intended
 
-- Create reproducible dataset/evaluation tooling.
-- Compare base model vs LoRA/SFT.
-- Keep training assumptions outside runtime architecture.
+Use environment variables or local configuration files excluded by `.gitignore`.
 
-### Phase 8 — Voice & Presence
+Treat tool execution and external integrations as privileged capabilities.
 
-- TTS adapter.
-- STT adapter.
-- Structured emotion/expression output.
-- Idle/initiative events.
+## Current Priority
 
-### Phase 9 — VTuber / Platform Adapters
+Follow the migration order in `PLAN.md`.
 
-- Live2D/VRM adapter.
-- Web UI.
-- Discord/Telegram adapters.
-- Streaming integration.
+The immediate priority is:
 
-## 13. Definition of Done for Veil 2.0 Core
+```text
+Character abstraction
+    ↓
+State / relationship boundaries
+    ↓
+Memory 2.0
+    ↓
+Context pipeline
+    ↓
+Consistency evaluation
+    ↓
+LLM abstraction
+    ↓
+Training experiments
+    ↓
+Voice / VTuber adapters
+```
 
-- A character can be loaded without changing runtime source code.
-- Stella is only one character profile.
-- Character state survives process restarts.
-- Important memories survive process restarts.
-- Relevant memories can be retrieved without injecting the entire store.
-- The LLM backend can be replaced behind an interface.
-- Core logic is testable without a live model.
-- Character consistency has a measurable benchmark.
-- Tools/cognition do not leak implementation details into character responses.
-- The runtime can emit structured emotion/action metadata without requiring a VTuber frontend.
+Do not skip directly to fine-tuning, avatar rendering, or autonomous-agent features while the core character runtime is still unstable.
 
-## 14. Non-Goals for the First Core Milestone
+## Definition of Good Work
 
-Do not prioritize:
+A good Veil change should make at least one of these properties better:
 
-- full autonomous agents
-- multi-agent orchestration
-- unrestricted computer control
-- full model pretraining
-- full CPT pipelines
-- complex planning DAGs
-- avatar rendering inside the core
-- a massive vector database before retrieval needs are proven
+- character consistency
+- long-term continuity
+- testability
+- modularity
+- model independence
+- observability
+- reliability
 
-## 15. Engineering Rules
-
-- Prefer simple, observable systems over clever abstractions.
-- Keep character data separate from runtime logic.
-- Keep memory separate from prompts and model weights.
-- Keep state transitions deterministic where possible.
-- Every major subsystem needs a clear interface and tests.
-- Measure before replacing a working subsystem.
-- Do not introduce fine-tuning merely because prompting feels imperfect.
-- Preserve backwards compatibility where practical during migration.
+If a change does not clearly improve one of them, question whether it belongs in the current milestone.
