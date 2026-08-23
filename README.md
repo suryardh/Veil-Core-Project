@@ -135,7 +135,7 @@ Veil/
 ├── app.py                      ← CLI entry point
 ├── app_tui.py                  ← TUI entry point (rich, split-panel)
 ├── config.py                   ← all tunables + .env
-├── test_agent.py               ← 45 assertions
+├── test_agent.py               ← 55 assertions
 │
 ├── core/
 │   ├── bootstrap.py            ← App startup consolidation
@@ -166,6 +166,8 @@ Veil/
 │
 ├── tools/
 │   ├── base.py                 ← BaseTool + ToolResult + ToolContext
+│   ├── state_backup.py         ← manual backup/restore data/state.json
+│   ├── bench.py                ← fixed-prompt benchmark (baseline comparison)
 │   ├── web/
 │   │   └── search.py           ← Tavily REST + _CachedMixin
 │   └── system/
@@ -231,6 +233,44 @@ models/qwen2.5-3b-instruct-q4_k_m.gguf
 
 Inference backend: llama.cpp via `llama-cpp-python`
 
+## Model Integration Map
+
+Where the model touches the codebase (MODEL-001 inventory):
+
+```text
+config.py                    ← all model knobs
+├── MODEL_PATH               models/qwen2.5-3b-instruct-q4_k_m.gguf
+├── N_CTX=4096  N_THREADS    loaded by llm/engine.py LLMEngine.__init__
+├── USE_GPU                  → n_gpu_layers=-1 when enabled
+├── SAMPLING / MAX_TOKENS    merged in engine._default_params()
+├── STOP_TOKENS              ["<|im_end|>"]
+└── CTX_BUDGET_*             char budgets applied in core/agent.py
+
+Call chain (one generation):
+personality/core.py PersonalityCore.handle(user_input)
+  → core/agent.py VeilAgent.generate(system, user_input, observation)
+      builds raw ChatML (<|im_start|>system/user/assistant<|im_end|>)
+      truncates history/prompt via _truncate() + CTX_BUDGET_*
+  → llm/engine.py LLMEngine.generate(prompt)
+      llama_cpp.Llama(...) call with SAMPLING params
+
+Persistence around it:
+  state: personality/persistence.py ↔ data/state.json (schema v2)
+  short-term memory: memory/short_term.py (in-memory, cap limit×2 msgs, 500 chars/msg)
+  long-term memory: memory/long_term.py ↔ memory/long_term.json
+```
+
+### Assumptions tied to the current 3B model
+
+- Filename hardcoded in `config.MODEL_PATH` and in bootstrap's error message.
+- ChatML `<|im_start|>/<|im_end|>` matches Qwen2 template — any Qwen2-family
+  GGUF is drop-in; other families need prompt-format changes.
+- Context budgets are **characters**, not tokens (~3.5–4 chars/token for
+  Indonesian) — never validated against real tokenization (see MODEL-004).
+- N_CTX=4096 vs model's 32k training context — large unused headroom.
+- Installed wheel is CPU-only and `_setup_cuda_paths()` targets a nonexistent
+  `venv\` dir — GPU is currently not used (details in `BASELINE.md`).
+
 ---
 
 # Configuration
@@ -268,18 +308,35 @@ python app_tui.py
 
 ---
 
+# Backup & Restore State
+
+`data/state.json` holds accumulated relationship state — back it up before model or runtime changes.
+
+```bash
+# create a timestamped backup in data/backups/
+python tools/state_backup.py export
+
+# verify a backup against a temporary copy (live state untouched)
+python tools/state_backup.py restore data/backups/<file>.json
+
+# actually overwrite the live state file after verification
+python tools/state_backup.py restore data/backups/<file>.json --apply
+```
+
+Backups are JSON envelopes containing the original payload plus `created_at`,
+`schema_version`, and a SHA-256 checksum. Tampered backups and backups from a
+newer schema version are rejected on restore. Old backups are never deleted
+automatically.
+
+---
+
 # Testing
 
 ```bash
 python test_agent.py
 ```
 
-### TUI (rich-based)
-```bash
-python app_tui.py
-```
-
-45 tests (passing):
+55 tests (passing):
 - calculator (6)
 - datetime (4)
 - long-term memory (6)
@@ -287,6 +344,7 @@ python app_tui.py
 - emotional analysis (11)
 - state management (6)
 - emotional memory (4)
+- state backup/restore (10)
 - orchestrator (1)
 - LLM integration (3)
 

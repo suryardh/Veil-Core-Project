@@ -26,13 +26,13 @@
 - CLI/runtime entry point
 
 **Tasks**
-- [ ] Identify the current state file path.
-- [ ] Verify which runtime components write to it.
-- [ ] Create a manual export/backup command or documented procedure.
-- [ ] Include timestamp/schema version in exported backup metadata.
-- [ ] Restore a backup into a temporary copy.
-- [ ] Verify the restored state loads successfully.
-- [ ] Document the procedure.
+- [x] Identify the current state file path. (`data/state.json` via `personality/persistence.py:DEFAULT_PATH`)
+- [x] Verify which runtime components write to it. (only `personality/core.py` → `save_state`)
+- [x] Create a manual export/backup command or documented procedure. (`tools/state_backup.py export`)
+- [x] Include timestamp/schema version in exported backup metadata.
+- [x] Restore a backup into a temporary copy. (`restore` without `--apply` verifies only)
+- [x] Verify the restored state loads successfully. (loads via `load_state`, prints state summary)
+- [x] Document the procedure. (README → "Backup & Restore State")
 
 **Acceptance criteria**
 - A complete state backup can be created without modifying the original.
@@ -50,15 +50,19 @@
 
 **Goal:** know what "better" means before changing the model.
 
+**Result:** captured in `BASELINE.md` (2026-08-23). Runtime is CPU-only — the
+installed llama-cpp-python wheel has no CUDA support and `_setup_cuda_paths()`
+points to a nonexistent `venv\` dir. Fixing GPU belongs to MODEL-003 setup.
+
 **Tasks**
-- [ ] Record current model name and quantization.
-- [ ] Record current context limit/config.
-- [ ] Record system/history/response token budgets.
-- [ ] Record average response latency.
-- [ ] Record RAM/VRAM usage if measurable.
-- [ ] Save 10–20 representative conversations/prompts.
-- [ ] Include casual Indonesian, emotional interaction, memory recall, and character-boundary cases.
-- [ ] Record known current failures.
+- [x] Record current model name and quantization.
+- [x] Record current context limit/config.
+- [x] Record system/history/response token budgets. (actual: 2500/2500/800 chars — docs synced)
+- [x] Record average response latency. (avg 5.88s, 13-prompt bench)
+- [x] Record RAM/VRAM usage if measurable. (RAM ~2.87 GB footprint; VRAM n/a, CPU build)
+- [x] Save 10–20 representative conversations/prompts. (13 prompts + responses in `tools/bench.py` / `BASELINE.md`)
+- [x] Include casual Indonesian, emotional interaction, memory recall, and character-boundary cases.
+- [x] Record known current failures. (5 concrete cases in `BASELINE.md`)
 
 **Acceptance criteria**
 - A reproducible baseline exists before model migration.
@@ -71,16 +75,21 @@
 
 **Goal:** understand exactly what must change.
 
+**Result:** documented as "Model Integration Map" in `README.md`. Known
+migration-relevant issues: CPU-only wheel installed, `_setup_cuda_paths()` uses
+wrong env dir, CUDA wheel index URL in README was outdated (fixed path noted in
+`CANDIDATES.md`), char-based budgets unvalidated against token counts.
+
 **Tasks**
-- [ ] Locate model configuration.
-- [ ] Locate model loading/inference code.
-- [ ] Locate model path configuration.
-- [ ] Locate generation parameters.
-- [ ] Locate context-length configuration.
-- [ ] Document assumptions specific to the current 3B model.
+- [x] Locate model configuration. (`config.py`)
+- [x] Locate model loading/inference code. (`llm/engine.py`)
+- [x] Locate model path configuration. (`config.MODEL_PATH` → `core/bootstrap._build_agent`)
+- [x] Locate generation parameters. (`config.SAMPLING` → `engine._default_params`)
+- [x] Locate context-length configuration. (`config.N_CTX`, `CTX_BUDGET_*` in `core/agent.py`)
+- [x] Document assumptions specific to the current 3B model. (README integration map)
 
 **Acceptance criteria**
-- A new contributor can identify the model integration path from the documentation.
+- [x] A new contributor can identify the model integration path from the documentation.
 
 ---
 
@@ -88,24 +97,28 @@
 
 **Goal:** choose a concrete model rather than treating "Qwen 7B" as one behavior.
 
-**Candidates**
-- [ ] Qwen 2.5 7B GGUF candidate.
-- [ ] Qwen 3.x 7B-class candidate if compatible with the current runtime.
-- [ ] Other suitable Qwen 7B GGUF candidate if technically justified.
+**Requirement added 2026-08-23:** candidate must be uncensored (refusal-free) —
+refusal/assistant leakage is a documented baseline failure. Evaluation recorded
+in `CANDIDATES.md`.
 
-**For each candidate record**
-- [ ] Exact model/revision.
-- [ ] Quantization.
-- [ ] Context length.
-- [ ] License.
-- [ ] GGUF source.
-- [ ] RAM/VRAM requirement.
-- [ ] Expected inference speed.
-- [ ] Known roleplay/Indonesian behavior.
+**Candidates**
+- [x] Qwen 2.5 7B GGUF candidate. (huihui-ai Qwen2.5-7B-Instruct-abliterated-v2)
+- [x] Qwen 3.x 7B-class candidate if compatible with the current runtime. (DavidAU Heretic Qwen3-8B; needs `<think>` handling)
+- [x] Other suitable Qwen 7B GGUF candidate if technically justified. (Huihui-Qwen3-8B-abliterated-v2)
+
+**For each candidate record** — see `CANDIDATES.md`
+- [x] Exact model/revision.
+- [x] Quantization.
+- [x] Context length.
+- [x] License.
+- [x] GGUF source.
+- [x] RAM/VRAM requirement.
+- [x] Expected inference speed.
+- [x] Known roleplay/Indonesian behavior.
 
 **Acceptance criteria**
-- One candidate is explicitly selected.
-- The old 3B model remains available for rollback.
+- [x] One candidate is explicitly selected. (huihui Qwen2.5-7B-Instruct-abliterated-v2, Q4_K_M)
+- [x] The old 3B model remains available for rollback.
 
 ---
 
@@ -133,9 +146,12 @@
 **Goal:** replace assumptions inherited from the 3B configuration with measured values.
 
 **Current baseline**
+
+Actual values from `config.py` (chars, not tokens — see `BASELINE.md`):
+
 ```text
-system:   ~2000
-history:  ~1500
+system:   ~2500
+history:  ~2500
 response:  ~800
 ```
 

@@ -1,12 +1,15 @@
 import os
 import sys
 import time
+import json
 import config
 from core.agent import VeilAgent
 from core.orchestrator import Orchestrator
 from personality.core import PersonalityCore
 from personality.analyzer import analyze
 from personality.state import StellaState
+from personality.persistence import save_state, load_state
+from tools.state_backup import export_backup, restore_backup, checksum_payload
 from memory.emotional import EmotionalMemory
 from memory.extractor import extract_fact
 from memory.long_term import LongTermMemory
@@ -184,6 +187,71 @@ try:
 finally:
     if os.path.exists(TEST_EM_PATH):
         os.remove(TEST_EM_PATH)
+
+# ── 4b. STATE BACKUP / RESTORE (deterministic) ────────────────
+
+print("\n--- State Backup / Restore ---")
+TEST_STATE = "logs/test_state.json"
+TEST_BDIR = "logs/test_backups"
+tampered = newer = ""
+try:
+    save_state(StellaState(affection=0.42, trust=0.33), TEST_STATE)
+    bpath = export_backup(TEST_STATE, TEST_BDIR)
+    test("backup file created", os.path.exists(bpath), f"missing: {bpath}")
+
+    with open(bpath, encoding="utf-8") as f:
+        env = json.load(f)
+    test("backup metadata present",
+         all(k in env for k in ("backup_version", "created_at", "schema_version", "checksum", "payload")))
+    test("schema version recorded", env["schema_version"] == 2, f"got {env['schema_version']}")
+    test("checksum matches payload", env["checksum"] == checksum_payload(env["payload"]))
+    test("payload round-trips", abs(env["payload"]["state"]["affection"] - 0.42) < 1e-9)
+
+    save_state(StellaState(affection=0.9), TEST_STATE)  # corrupt live state
+    ok = restore_backup(bpath, TEST_STATE, apply=True)
+    test("apply restores state", ok)
+    live = load_state(TEST_STATE)
+    test("restored values match backup", abs(live.affection - 0.42) < 1e-9 and abs(live.trust - 0.33) < 1e-9,
+         f"got affection={live.affection} trust={live.trust}")
+
+    save_state(StellaState(affection=0.7), TEST_STATE)
+    ok = restore_backup(bpath, TEST_STATE, apply=False)
+    live = load_state(TEST_STATE)
+    test("verify-only leaves original untouched", ok and abs(live.affection - 0.7) < 1e-9)
+
+    tampered = bpath + ".tampered"
+    with open(tampered, "w", encoding="utf-8") as f:
+        json.dump({**env, "checksum": "deadbeef"}, f)
+    try:
+        restore_backup(tampered, TEST_STATE, apply=False)
+        rejected = False
+    except ValueError:
+        rejected = True
+    test("tampered backup rejected", rejected)
+
+    newer = bpath + ".newer"
+    with open(newer, "w", encoding="utf-8") as f:
+        json.dump({**env, "schema_version": 99}, f)
+    # checksum no longer covers the edited schema_version field... recompute so only schema check fires
+    with open(newer, encoding="utf-8") as f:
+        bad_env = json.load(f)
+    bad_env["payload"] = dict(env["payload"], version=99)
+    bad_env["checksum"] = checksum_payload(bad_env["payload"])
+    with open(newer, "w", encoding="utf-8") as f:
+        json.dump(bad_env, f)
+    try:
+        restore_backup(newer, TEST_STATE, apply=False)
+        future_rejected = False
+    except ValueError:
+        future_rejected = True
+    test("newer-schema backup rejected", future_rejected)
+finally:
+    for p in (TEST_STATE, tampered, newer):
+        if p and os.path.exists(p):
+            os.remove(p)
+    if os.path.exists(TEST_BDIR):
+        import shutil
+        shutil.rmtree(TEST_BDIR)
 
 print("\n--- Orchestrator ---")
 orch = Orchestrator()

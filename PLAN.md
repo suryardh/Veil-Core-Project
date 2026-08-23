@@ -113,10 +113,12 @@ Do not blindly copy the old numbers.
 
 ### Current baseline
 
+Actual values from `config.py` (chars, not tokens — see `BASELINE.md`):
+
 ```text
-System:   ~2,000 tokens
-History:  ~1,500 tokens
-Response:   ~800 tokens
+System:   ~2,500
+History:  ~2,500
+Response:   ~800
 ```
 
 ### Tasks
