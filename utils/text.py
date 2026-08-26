@@ -30,6 +30,25 @@ _WRAP_QUOTES = ('"',)
 _EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF]\uFE0F?")
 _HIKS_RE = re.compile(r"\s*\bhiks+\b\.?", re.I)
 _EMOJI_GLUE_RE = re.compile(r"([\U0001F000-\U0001FAFF\u2600-\u27BF])([a-zA-Z])")
+_HASHTAG_RE = re.compile(r"#\w+")
+
+# Fancy unicode that breaks ASCII-only cleanup rules downstream.
+_UNICODE_MAP = {
+    "\u2026": "...",   # …
+    "\u2018": "'", "\u2019": "'",
+    "\u201c": '"', "\u201d": '"',
+    "\u2013": "-", "\u2014": "-",
+    "\u00a0": " ", "\u200b": "", "\u200c": "", "\ufeff": "",
+    # Fullwidth CJK punctuation the model occasionally emits.
+    "\uff0c": ",", "\uff01": "!", "\uff1f": "?", "\u3002": ".",
+    "\uff1a": ":", "\uff1b": ";",
+}
+
+
+def _normalize_unicode(text: str) -> str:
+    for src, dst in _UNICODE_MAP.items():
+        text = text.replace(src, dst)
+    return text
 _EN_STOPWORDS = {"the", "you", "your", "are", "is", "it's", "i've", "i'm", "did",
                  "and", "of", "to", "that", "what", "have", "has", "was", "will",
                  "should", "tell", "after", "about", "think"}
@@ -100,11 +119,17 @@ def collapse_sayang(text: str) -> str:
 
 
 def strip_emojis_from_source(text: str, source_text: str) -> str:
-    """Drop emojis the user just sent — echoing them is compliance, not expression."""
-    source_emojis = set(_EMOJI_RE.findall(source_text or ""))
-    if not source_emojis:
-        return text
-    return _EMOJI_RE.sub(lambda m: "" if m.group() in source_emojis else m.group(), text).strip()
+    """Drop emojis and hashtags the user just sent — echoing them is
+    compliance, not expression."""
+    src = source_text or ""
+    source_emojis = set(_EMOJI_RE.findall(src))
+    if source_emojis:
+        text = _EMOJI_RE.sub(
+            lambda m: "" if m.group() in source_emojis else m.group(), text)
+    for tag in _HASHTAG_RE.findall(text):
+        if f"#{tag[1:]}" in src or tag[1:].lower() in src.lower():
+            text = text.replace(tag, "")
+    return re.sub(r"( ){2,}", r"\1", text).strip()
 
 
 _ORPHAN_PUNCT = re.compile(r"\s*,\s*([?.!])")
@@ -155,7 +180,7 @@ def _unwrap_quotes(text: str) -> str:
 
 def sanitize_llm_output(text: str) -> str:
     """Clean and sanitize the output from an LLM response."""
-    text = text.strip()
+    text = _normalize_unicode(text.strip())
     if "<|im_end|>" in text:
         text = text.split("<|im_end|>")[0]
     for pattern, replacement in CLEANUP_PATTERNS:

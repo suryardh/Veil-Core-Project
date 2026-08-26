@@ -419,6 +419,13 @@ echoed = strip_emojis_from_source(cat_reply, cat_chat)
 test("glue: user emoji echo stripped", echoed == "seru!", f"got {echoed!r}")
 own = strip_emojis_from_source("mantap \U0001F680", "halo \U0001F431")
 test("glue: own emoji kept", own == "mantap \U0001F680", f"got {own!r}")
+tagged = strip_emojis_from_source("Seru! #RomantisBersama", "yuk #RomantisBersama")
+test("glue: user hashtag echo stripped",
+     "RomantisBersama" not in tagged.replace("seru!", ""), f"got {tagged!r}")
+from utils.text import sanitize_llm_output as _san2
+curly = _san2("\u201cFilm itu keren\u201d \u2026 beneran?")
+test("sanitizer: unicode normalized (curly quotes, ellipsis)",
+     curly == '"Film itu keren" ... beneran?', f"got {curly!r}")
 from utils.text import fix_orphan_punct, remove_pet_names
 print("\n--- Response Evaluator ---")
 from core.evaluator import (asks_question, closure_ok, detect_phrase_echo,
