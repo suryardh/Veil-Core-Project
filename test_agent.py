@@ -420,6 +420,43 @@ test("glue: user emoji echo stripped", echoed == "seru!", f"got {echoed!r}")
 own = strip_emojis_from_source("mantap \U0001F680", "halo \U0001F431")
 test("glue: own emoji kept", own == "mantap \U0001F680", f"got {own!r}")
 from utils.text import fix_orphan_punct, remove_pet_names
+print("\n--- Response Evaluator ---")
+from core.evaluator import (asks_question, closure_ok, detect_phrase_echo,
+                            distinctive_words, sayang_count)
+test("eval: distinctive words skip stopwords",
+     "ngebul" in distinctive_words("kamu tuh ngebul deh kalau kangen"))
+test("eval: phrase echo caught (real failure transcript)",
+     detect_phrase_echo("kamu tuh ngebul deh kalau kangen",
+                        "Betul juga ya! Aku cuma ngebul-bulein karenanya.") is not None)
+test("eval: clarify-without-reuse passes",
+     detect_phrase_echo("kamu tuh ngebul deh kalau kangen",
+                        "Bahasa planet apa itu? Tapi iya, aku kangen banget malam gini.") is None)
+test("eval: question persistence detected", asks_question("Kamu mau bantuin apa?"))
+test("eval: closure ok short no-question", closure_ok("Oke, istirahat ya. Besok jalan lancar."))
+test("eval: closure fail long+question",
+     not closure_ok("Ngemil enak ya? Bisa aja kita lanjutin obrolan lagi nanti mau ngapain?"))
+test("eval: sayang count", sayang_count("Sayang, kamu sayang banget ya") == 2)
+print("\n--- Conversation Constraints ---")
+from core.constraints import detect_constraints, render_constraints
+c = detect_constraints("udah dulu ya ngobrolnya, aku mau istirahat")
+test("constraint: closing detected", c["conversation_closing"] and c["avoid_topic_expansion"])
+test("constraint: closing implies no questions", c["avoid_questions"])
+c2 = detect_constraints("udah tau aku grogi malah nanya mulu")
+test("constraint: complaint bans questions",
+     c2["avoid_questions"] and not c2["conversation_closing"])
+test("constraint: neutral message clean",
+     detect_constraints("halo stella lagi ngapain") == {"conversation_closing": False,
+                                                       "avoid_topic_expansion": False,
+                                                       "avoid_questions": False})
+rendered = render_constraints(c)
+test("constraint: directives rendered", any("ONE short warm" in r for r in rendered))
+agent = object.__new__(VeilAgent)
+polished = agent.__class__ and None
+from core.agent import _polish
+out = _polish("Oke, istirahat ya! Nanti cerita lagi ya kalau ada kabar? Jangan lupa istirahat yang cukup.",
+              "udah dulu ya", closing=True)
+test("constraint: closure trim keeps first sentence only",
+     out == "Oke, istirahat ya!" and "?" not in out, f"got {out!r}")
 test("sanitizer: orphan comma before question mark fixed",
      fix_orphan_punct("mau aku bantu apa, ?") == "mau aku bantu apa?")
 petted = "Sayang, kamu udah makan? Jangan lupa sayang!"
