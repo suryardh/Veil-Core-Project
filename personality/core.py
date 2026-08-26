@@ -2,7 +2,7 @@ import random as _random
 import time
 
 from core.cognition import Cognition
-from core.constraints import detect_constraints, render_constraints
+from core.constraints import ConversationConstraints, render_constraints
 from core.orchestrator import is_calculator_query, is_datetime_query, is_tavily_query
 from utils.async_utils import with_retry
 from utils.logger import log
@@ -23,6 +23,7 @@ class PersonalityCore:
         self.orch = orchestrator
         self.cognition = Cognition(orchestrator.tools if cognition_tools is None else cognition_tools)
         self.emotional_memory = EmotionalMemory()
+        self.constraints = ConversationConstraints(ttl=2)
         self.state = load_state()
         self.identity = StellaIdentity()
         self.last_reaction_ts: float = 0.0
@@ -170,11 +171,13 @@ class PersonalityCore:
         save_state(self.state)
 
         emotional_summary = self.emotional_memory.emotional_summary()
-        cflags = detect_constraints(user_input)
+        cflags = self.constraints.observe(user_input)
         constraints = render_constraints(cflags)
         system = build_prompt(self._identity_blob(), self.state, emotional_summary,
                               inactivity_ctx, rhythm, user_constraints=constraints)
 
-        return self.agent.generate(system, user_input, cognition_context,
-                                   closing=cflags.get("conversation_closing", False),
-                                   no_questions=cflags.get("avoid_questions", False))
+        reply = self.agent.generate(system, user_input, cognition_context,
+                                    closing=cflags.get("conversation_closing", False),
+                                    no_questions=cflags.get("avoid_questions", False))
+        self.constraints.tick()
+        return reply

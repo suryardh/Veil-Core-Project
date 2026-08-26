@@ -44,3 +44,40 @@ def render_constraints(constraints: dict | None) -> list[str]:
         if constraints.get("avoid_topic_expansion"):
             out.append("Do not introduce or expand any topic.")
     return out
+
+
+# Flags that persist a few turns after the triggering complaint.
+_PERSISTENT_FLAGS = {"avoid_questions", "avoid_topic_expansion"}
+
+
+class ConversationConstraints:
+    """Session-scoped constraint store with per-flag TTL (in turns).
+
+    A complaint like 'jangan nanya mulu' keeps avoid_questions active for the
+    next `ttl` replies even if the user never repeats it. Momentary flags
+    (closing) are never persisted.
+    """
+
+    def __init__(self, ttl: int = 2):
+        self.ttl = ttl
+        self._flags: dict[str, int] = {}
+
+    def observe(self, user_text: str) -> dict:
+        """Merge fresh detection into the store; return currently active flags."""
+        fresh = detect_constraints(user_text)
+        for key in _PERSISTENT_FLAGS:
+            if fresh.get(key):
+                self._flags[key] = max(self._flags.get(key, 0), self.ttl)
+        active = self.active()
+        # Momentary flags pass through without persistence.
+        for key, value in fresh.items():
+            if key not in _PERSISTENT_FLAGS:
+                active[key] = value
+        return active
+
+    def tick(self) -> None:
+        """Call after each consumed reply."""
+        self._flags = {k: v - 1 for k, v in self._flags.items() if v - 1 > 0}
+
+    def active(self) -> dict:
+        return {k: True for k, v in self._flags.items() if v > 0}
