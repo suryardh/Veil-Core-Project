@@ -107,14 +107,19 @@ def strip_emojis_from_source(text: str, source_text: str) -> str:
     return _EMOJI_RE.sub(lambda m: "" if m.group() in source_emojis else m.group(), text).strip()
 
 
-_ORPHAN_PUNCT = re.compile(r"\s*,\s*([?!])")
+_ORPHAN_PUNCT = re.compile(r"\s*,\s*([?.!])")
 _PETNAME_RE = re.compile(r"\b[Ss]ayang\b\s*[,.!]?\s*")
 
 
 def fix_orphan_punct(text: str) -> str:
-    """'mau aku bantu apa, ?' / 'apa,,?' -> 'mau aku bantu apa?'"""
-    text = re.sub(r",{2,}", ",", text)
-    return _ORPHAN_PUNCT.sub(r"\1", text)
+    """'mau aku bantu apa, ?' / 'apa,,?' / 'khawatir,. lanjut' -> clean."""
+    for _ in range(3):  # multi-char messes (',.', ',,.') need repeated passes
+        new = re.sub(r",{2,}", ",", text)
+        new = _ORPHAN_PUNCT.sub(r"\1", new)
+        if new == text:
+            break
+        text = new
+    return text
 
 
 def remove_pet_names(text: str) -> str:
