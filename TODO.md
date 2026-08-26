@@ -192,6 +192,15 @@ hard guard        CTX_PROMPT_CHAR_LIMIT ≈ 14.5k chars
 
 **Goal:** collect concrete failures instead of relying on vague impressions.
 
+**Status: [~] IN PROGRESS (started 2026-08-26).** Automated via
+`tools/daily_eval.py` + Task Scheduler job `VeilSevenDayEval` (daily 21:00,
+self-deletes after day 7). Runs 12 probes daily against a sandboxed state in
+`data/eval_sandbox/` that persists across days; real `state.json` untouched.
+Outputs in `logs/eval/`: daily `.md` report, `responses.jsonl`,
+`state_history.csv`, and a pre-formatted `failures.md` to fill manually.
+Day-1 finding already captured: memory seed acknowledged then forgotten two
+turns later (memory/state inconsistency).
+
 **For every significant failure record**
 ```text
 Date:
@@ -239,17 +248,22 @@ Potential runtime/prompt cause:
 
 **Goal:** establish a repeatable migration pattern.
 
+**Progress (2026-08-26):** v2 → v3 precedent created while adding conflict
+dynamics fields (`_register(2)` in `persistence.py`, setdefault-only migration,
+legacy payload tested). Remaining gap: explicit validation pass *before*
+migrating.
+
 **Tasks**
-- [ ] Confirm existing v1 → v2 migration pattern.
-- [ ] Extract reusable migration approach.
-- [ ] Define v3 migration convention.
+- [x] Confirm existing v1 → v2 migration pattern.
+- [x] Extract reusable approach. (`_register` decorator + `_run_migrations`)
+- [x] Define v3 migration convention. (setdefault-safe fields only)
 - [ ] Add validation before migration.
-- [ ] Write migrated state to a safe target.
-- [ ] Preserve original on failure.
-- [ ] Add migration tests.
+- [x] Write migrated state to a safe target. (in-memory at load; atomic save)
+- [x] Preserve original on failure. (backup tool + non-destructive load path)
+- [x] Add migration tests. (legacy-v2 payload test)
 
 **Acceptance criteria**
-- A schema migration can fail without destroying the original state.
+- [x] A schema migration can fail without destroying the original state.
 
 ---
 
@@ -259,102 +273,101 @@ Potential runtime/prompt cause:
 
 **Goal:** distinguish temporary mood changes from gradual relationship changes.
 
+**Result (2026-08-26):** implemented in `personality/conflict.py` +
+`StellaState.drift_window` (persisted, schema v3). Significant valences
+(confidence ≥ 0.4) fill a 10-slot window; `compute_drift()` classifies it as
+positive / stable / negative / insufficient (min 5 samples, ±0.15 band).
+Logged at debug level each turn.
+
 **Tasks**
-- [ ] Inventory current relationship/state variables.
-- [ ] Identify variables allowed to drift.
-- [ ] Define drift threshold.
-- [ ] Define observation window.
-- [ ] Define positive drift.
-- [ ] Define negative drift.
-- [ ] Define neutral/noise behavior.
-- [ ] Add deterministic tests.
-- [ ] Add debug logging.
+- [x] Inventory current relationship/state variables. (5-dim + mode system, `personality/state.py`)
+- [x] Identify variables allowed to drift. (all five dims, clamped [0..1])
+- [x] Define drift threshold. (±0.15 average valence)
+- [x] Define observation window. (10 samples, ≥5 to classify)
+- [x] Define positive drift. (avg > +0.15)
+- [x] Define negative drift. (avg < −0.15)
+- [x] Define neutral/noise behavior. ("stable" band + "insufficient" guard)
+- [x] Add deterministic tests. (drift + full cycle suite)
+- [x] Add debug logging. (`core.handle` → log.debug per turn)
 
 **Acceptance criteria**
-- Repeated interaction patterns can produce gradual relationship changes.
-- A single unusual message cannot permanently distort relationship state.
+- [x] Repeated interaction patterns can produce gradual relationship changes.
+- [x] A single unusual message cannot permanently distort relationship state.
 
 ---
 
 ## REL-001 — Define conflict triggers
 
-**Goal:** create explicit, testable conflict detection.
+**Result:** `detect_conflict()` in `personality/conflict.py`. Categories:
+insult / abandonment / rejection. Severity ∈ [0..1] from base weights plus an
+intensifier boost (+0.15 for `!!`, CAPS). False-positive guards: plain insults
+require a second-person marker ("kamu bego" ≠ "bos gw bego"); sub-threshold
+events (<0.25) ignored. Repeated conflict during cooldown escalates +0.15.
 
 **Tasks**
-- [ ] Inventory current emotional signals.
-- [ ] Define conflict categories.
-- [ ] Define severity levels.
-- [ ] Define false-positive examples.
-- [ ] Define repeated-trigger behavior.
-- [ ] Add test fixtures.
-
-**Example**
-```text
-conflict signal
-    ↓
-severity ∈ [0..1]
-    ↓
-relationship impact
-```
+- [x] Inventory current emotional signals. (`personality/analyzer.py` lexicon)
+- [x] Define conflict categories. (insult, abandonment, rejection)
+- [x] Define severity levels. (weighted lexicon, clamped [0..1])
+- [x] Define false-positive examples. (third-party venting, self-directed, neutral chat — all tested)
+- [x] Define repeated-trigger behavior. (escalation step while cooling down)
+- [x] Add test fixtures. (`test_agent.py` Conflict Dynamics section)
 
 **Acceptance criteria**
-- Conflict detection has documented rules/examples.
-- Tests cover both positive and negative cases.
+- [x] Conflict detection has documented rules/examples.
+- [x] Tests cover both positive and negative cases.
 
 ---
 
 ## REL-002 — Conflict cooldown
 
-**Goal:** prevent immediate emotional reset after conflict.
+**Result:** on accepted conflict: penalty applied to trust/affection/comfort/
+attachment, `cooldown_until = now + COOLDOWN_BASE_S × severity` (15 min × sev),
+mode forced to withdrawn (strength ≥ 0.4). While cooling: positive deltas
+damped ×0.35. Persisted via schema v3. Ceiling: cooldown clock resets on app
+restart if the saved timestamp has passed — acceptable for chat pacing.
 
 **Tasks**
-- [ ] Define cooldown state.
-- [ ] Define duration.
-- [ ] Define decay during cooldown.
-- [ ] Define repeated-conflict behavior.
-- [ ] Persist cooldown state if necessary.
-- [ ] Add tests.
+- [x] Define cooldown state. (`cooldown_until`, persisted)
+- [x] Define duration. (900 s × severity)
+- [x] Define decay during cooldown. (positive-gain damping 0.35)
+- [x] Define repeated-conflict behavior. (escalation + fresh timer)
+- [x] Persist cooldown state if necessary. (schema v3)
+- [x] Add tests.
 
 ---
 
 ## REL-003 — Recovery curve
 
-**Goal:** model gradual recovery.
+**Result:** conflicts snapshot the damage into `pending_recovery` gaps. Once
+cooldown expires, each qualifying turn (valence ≥ 0.2) heals a fraction of the
+remaining gap (25%, scaled up by valence, ×2 after apology) — never overshooting
+the pre-conflict value; a turn can never fully heal. Gap < 0.01 counts as
+healed and clears the cycle.
 
 **Tasks**
-- [ ] Identify affected state variables.
-- [ ] Define initial recovery value.
-- [ ] Define recovery rate.
-- [ ] Define modifiers.
-- [ ] Prevent instant reset.
-- [ ] Add tests for multiple time steps.
-
-**Example**
-```text
-conflict
-   ↓
-negative state
-   ↓
-cooldown
-   ↓
-gradual recovery
-   ↓
-normal baseline
-```
+- [x] Identify affected state variables. (trust, affection, comfort, attachment)
+- [x] Define initial recovery value. (gap snapshot at conflict time)
+- [x] Define recovery rate. (fraction-of-gap per turn)
+- [x] Define modifiers. (valence scaling, apology bonus)
+- [x] Prevent instant reset. (tested: one turn heals < 75% of gap)
+- [x] Add tests for multiple time steps. (30-turn loop to full heal)
 
 ---
 
 ## REL-004 — Reconciliation
 
-**Goal:** distinguish apology/reassurance from actual relationship recovery.
+**Result:** apology markers (`maaf`, `sorry`, `aku salah`, …) halve an ACTIVE
+cooldown (relative to the moment of apology) and double the recovery fraction.
+Only the first two apologies per cycle are effective; further apologies do
+nothing until the cycle resets — anti-spam guard.
 
 **Tasks**
-- [ ] Define reconciliation triggers.
-- [ ] Define required conditions.
-- [ ] Define partial recovery.
-- [ ] Define full recovery.
-- [ ] Define repeated failed reconciliation.
-- [ ] Add tests.
+- [x] Define reconciliation triggers. (apology lexicon)
+- [x] Define required conditions. (active cooldown or pending recovery)
+- [x] Define partial recovery. (accelerated fraction per turn)
+- [x] Define full recovery. (asymptotic heal + snap at epsilon)
+- [x] Define repeated failed reconciliation. (max 2 effective apologies)
+- [x] Add tests.
 
 ---
 

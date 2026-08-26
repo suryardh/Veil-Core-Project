@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import time
 import json
@@ -8,7 +9,9 @@ from core.orchestrator import Orchestrator
 from personality.core import PersonalityCore
 from personality.analyzer import analyze
 from personality.state import StellaState
-from personality.persistence import save_state, load_state
+from personality.persistence import save_state, load_state, SCHEMA_VERSION
+from personality.conflict import detect_conflict, on_interaction, compute_drift, is_apology
+from utils.text import _EMOJI_RE
 from tools.state_backup import export_backup, restore_backup, checksum_payload
 from memory.emotional import EmotionalMemory
 from memory.extractor import extract_fact
@@ -203,7 +206,7 @@ try:
         env = json.load(f)
     test("backup metadata present",
          all(k in env for k in ("backup_version", "created_at", "schema_version", "checksum", "payload")))
-    test("schema version recorded", env["schema_version"] == 2, f"got {env['schema_version']}")
+    test("schema version recorded", env["schema_version"] == SCHEMA_VERSION, f"got {env['schema_version']}")
     test("checksum matches payload", env["checksum"] == checksum_payload(env["payload"]))
     test("payload round-trips", abs(env["payload"]["state"]["affection"] - 0.42) < 1e-9)
 
@@ -286,6 +289,146 @@ try:
     test("guard: normal path keeps short history", "pesan-pertama-yang-harus-hilang" in p3)
 finally:
     pass
+
+# ── 4d. CONFLICT / COOLDOWN / RECOVERY (deterministic) ────────
+
+print("\n--- Conflict Dynamics ---")
+NOW = 1_000_000.0
+try:
+    ev = detect_conflict("kamu bego banget sih!!")
+    test("conflict: directed insult detected", ev is not None and ev.severity >= 0.55,
+         f"got {ev}")
+    test("conflict: third-party venting ignored", detect_conflict("bos gw bego banget") is None)
+    test("conflict: self-directed ignored", detect_conflict("aku bego banget ya") is None)
+    test("conflict: abandonment detected", detect_conflict("pergi sana aja deh kamu") is not None)
+    test("conflict: neutral chat ignored", detect_conflict("lagi ngapain sayang?") is None)
+    test("apology: 'ya ampun' exclamation excluded", not is_apology("ya ampun, seru banget!"))
+    test("apology: genuine ampun accepted", is_apology("ampun, aku salah banget"))
+
+    s = StellaState(trust=0.8, affection=0.6, comfort=0.7, attachment=0.5)
+    a_neg = analyze("kamu bego banget!!")
+    info = on_interaction(s, "kamu bego banget!!", a_neg, NOW)
+    test("cycle: conflict event returned", info["event"] is not None)
+    test("cycle: trust dropped", s.trust < 0.8 - 0.05, f"got {s.trust}")
+    test("cycle: cooldown entered", s.cooldown_until > NOW)
+    test("cycle: withdrawn mode set", s.emotional_mode == "withdrawn")
+    test("cycle: recovery gap recorded", sum((s.pending_recovery or {}).values()) > 0.02,
+         f"got {s.pending_recovery}")
+
+    # damping while cooling down
+    hot = StellaState(affection=0.5, trust=0.5, comfort=0.5, attachment=0.5)
+    cold = StellaState(affection=0.5, trust=0.5, comfort=0.5, attachment=0.5)
+    cold.cooldown_until = NOW + 600
+    a_pos = analyze("makasih ya sayang")
+    hot.update_from_interaction(a_pos.emotion, a_pos.arousal, a_pos.confidence)
+    cold.update_from_interaction(a_pos.emotion, a_pos.arousal, a_pos.confidence, damping=0.35)
+    test("cooldown: positive gains damped", cold.affection < hot.affection,
+         f"hot={hot.affection} cold={cold.affection}")
+
+    # recovery after cooldown expiry — gradual, never instant
+    r = StellaState(trust=0.8, affection=0.6, comfort=0.7, attachment=0.5)
+    on_interaction(r, "kamu bego banget!!", a_neg, NOW, cooldown_base_s=100)
+    gaps0 = sum(r.pending_recovery.values())
+    on_interaction(r, "makasih ya sayang", a_pos, NOW + 50)   # still cooling → no heal yet
+    test("recovery: none during cooldown", abs(sum(r.pending_recovery.values()) - gaps0) < 1e-9)
+    on_interaction(r, "maaf ya aku kejam", a_pos, NOW + 200)  # apology + expired
+    gaps1 = sum(r.pending_recovery.values())
+    test("recovery: gradual, no instant reset", 0 < gaps1 < gaps0 * 0.75,
+         f"gaps0={gaps0:.3f} gaps1={gaps1:.3f}")
+    for i in range(30):
+        on_interaction(r, "makasih ya", a_pos, NOW + 300 + i * 60)
+    test("recovery: fully healed eventually", len(r.pending_recovery) == 0 and r.conflict_severity == 0.0,
+         f"left={r.pending_recovery}")
+    test("recovery: never overshoots baseline", r.trust <= 0.8 + 1e-9 and r.comfort <= 0.7 + 1e-9)
+
+    # reconciliation halves active cooldown; diminishing repeats
+    q = StellaState()
+    on_interaction(q, "pergi saja kamu", analyze("pergi saja kamu"), NOW, cooldown_base_s=1000)
+    cd0 = q.cooldown_until - NOW
+    on_interaction(q, "maaf ya", analyze("maaf ya"), NOW + 10)
+    # halving is relative to the moment of apology: (NOW+10) + (cd0-10)/2
+    expected_until = (NOW + 10) + (cd0 - 10) * 0.5
+    test("reconcile: cooldown halved", abs(q.cooldown_until - expected_until) < 0.01,
+         f"cd0={cd0:.0f} until={q.cooldown_until:.1f} expected={expected_until:.1f}")
+    for _ in range(3):
+        on_interaction(q, "maaf maaf maaf", analyze("maaf ya"), NOW + 20)
+    # second apology still counts (count<=2), third+ stop helping
+    expected_final = (NOW + 20) + (expected_until - (NOW + 20)) * 0.5
+    test("reconcile: repeat apologies stop helping",
+         q.apology_count == 4 and abs(q.cooldown_until - expected_final) < 0.01,
+         f"count={q.apology_count} until={q.cooldown_until:.1f} expected={expected_final:.1f}")
+
+    # EMO-001 drift classification
+    test("drift: insufficient samples", compute_drift([0.5, 0.4]) == "insufficient")
+    test("drift: stable under noise", compute_drift([0.3, -0.2, 0.1, -0.1, 0.05]) == "stable")
+    test("drift: positive pattern", compute_drift([0.5] * 5) == "positive")
+    test("drift: negative pattern", compute_drift([-0.6] * 6) == "negative")
+
+    # persistence: v3 roundtrip + legacy v2 migration
+    p = StellaState(pending_recovery={"trust": 0.05}, drift_window=[0.3, -0.1], cooldown_until=123.45)
+    save_state(p, TEST_STATE)
+    lp = load_state(TEST_STATE)
+    test("persist: v3 fields round-trip",
+         abs(lp.pending_recovery["trust"] - 0.05) < 1e-9 and lp.drift_window == [0.3, -0.1]
+         and abs(lp.cooldown_until - 123.45) < 1e-9)
+    import json as _json
+    legacy = {"version": 2, "state": {"affection": 0.5, "trust": 0.6}}
+    with open(TEST_STATE, "w", encoding="utf-8") as f:
+        _json.dump(legacy, f)
+    lv = load_state(TEST_STATE)
+    test("persist: legacy v2 migrates to v3",
+         lv.conflict_severity == 0.0 and lv.pending_recovery == {} and lv.drift_window == []
+         and abs(lv.affection - 0.5) < 1e-9)
+finally:
+    if os.path.exists(TEST_STATE):
+        os.remove(TEST_STATE)
+
+print("\n--- Output Sanitizer ---")
+from utils.text import sanitize_llm_output as _san
+test("sanitizer: leading tic chain stripped",
+     _san("Gas, wkwk, halo sayang") == "Halo sayang", f"got {_san('Gas, wkwk, halo sayang')!r}")
+test("sanitizer: sentence-initial Gas removed",
+     _san("Mantap. Gas, lanjut!") == "Mantap. lanjut!", f"got {_san('Mantap. Gas, lanjut!')!r}")
+test("sanitizer: pure reaction preserved", _san("wkwk") == "wkwk")
+test("sanitizer: normal text untouched", _san("aku kangen kamu") == "Aku kangen kamu")
+test("sanitizer: jakartan pronouns normalized",
+     _san("nanti gw bales sama lo") == "Nanti aku bales sama kamu",
+     f"got {_san('nanti gw bales sama lo')!r}")
+q_wrapped = '"film itu keren banget"'
+test("sanitizer: wrapping quotes unwrapped",
+     _san(q_wrapped) == "Film itu keren banget",
+     f"got {_san(q_wrapped)!r}")
+multi_emoji = "seru banget! \U0001F60F\U0001F680\U0001F4A5\U0001F95C"
+test("sanitizer: emoji capped at two", len(_EMOJI_RE.findall(_san(multi_emoji))) <= 2,
+     f"got {_san(multi_emoji)!r}")
+test("sanitizer: hiks removed", _san("ya udahlah hiks. aku baik") == "Ya udahlah aku baik",
+     f"got {_san('ya udahlah hiks. aku baik')!r}")
+gas_spam = "Gas buka linknya ya? Gas kita bahas. Gas jangan drama!"
+g = _san(gas_spam)
+test("sanitizer: gas spam reduced to at most one",
+     len(re.findall(r"\bgas\b", g, re.I)) <= 1 and "  " not in g, f"got {g!r}")
+test("sanitizer: saya normalized", _san("saya tungguin kamu") == "Aku tungguin kamu")
+from utils.text import collapse_sayang, strip_emojis_from_source
+sayang_spam = "kamu sayang aku sayang kamu sayang"
+test("glue: sayang capped per message",
+     collapse_sayang(sayang_spam) == "kamu sayang aku kamu",
+     f"got {collapse_sayang(sayang_spam)!r}")
+cat_chat = "wkwk \U0001F431\U0001F4AC"
+cat_reply = "seru! \U0001F431\U0001F4AC"
+echoed = strip_emojis_from_source(cat_reply, cat_chat)
+test("glue: user emoji echo stripped", echoed == "seru!", f"got {echoed!r}")
+own = strip_emojis_from_source("mantap \U0001F680", "halo \U0001F431")
+test("glue: own emoji kept", own == "mantap \U0001F680", f"got {own!r}")
+mixed_en = "Belum nih sayang. I've heard it's really good! Have you seen it yet?"
+test("sanitizer: english sentences dropped",
+     _san(mixed_en) == "Belum nih sayang.", f"got {_san(mixed_en)!r}")
+test("sanitizer: indonesian with loanword kept",
+     _san("kamu nonton The Batman belum?") == "Kamu nonton The Batman belum?",
+     f"got {_san('kamu nonton The Batman belum?')!r}")
+night_glued = "\U0001F60Anight \U0001F303"
+test("sanitizer: glued emoji separated",
+     _san(night_glued) == "\U0001F60A night \U0001F303",
+     f"got {_san(night_glued)!r}")
 
 print("\n--- Orchestrator ---")
 orch = Orchestrator()

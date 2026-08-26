@@ -135,7 +135,7 @@ Veil/
 ├── app.py                      ← CLI entry point
 ├── app_tui.py                  ← TUI entry point (rich, split-panel)
 ├── config.py                   ← all tunables + .env
-├── test_agent.py               ← 55 assertions
+├── test_agent.py               ← 85 assertions
 │
 ├── core/
 │   ├── bootstrap.py            ← App startup consolidation
@@ -168,6 +168,8 @@ Veil/
 │   ├── base.py                 ← BaseTool + ToolResult + ToolContext
 │   ├── state_backup.py         ← manual backup/restore data/state.json
 │   ├── bench.py                ← fixed-prompt benchmark (baseline comparison)
+│   ├── ctx_report.py           ← context budget measurement (tokenizer-based)
+│   ├── daily_eval.py           ← MODEL-005 seven-day evaluation harness
 │   ├── web/
 │   │   └── search.py           ← Tavily REST + _CachedMixin
 │   └── system/
@@ -337,7 +339,7 @@ automatically.
 python test_agent.py
 ```
 
-55 tests (passing):
+85 tests (passing):
 - calculator (6)
 - datetime (4)
 - long-term memory (6)
@@ -346,6 +348,8 @@ python test_agent.py
 - state management (6)
 - emotional memory (4)
 - state backup/restore (10)
+- context budget guard (7)
+- conflict dynamics (19)
 - orchestrator (1)
 - LLM integration (3)
 
