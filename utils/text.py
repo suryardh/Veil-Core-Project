@@ -107,6 +107,25 @@ def strip_emojis_from_source(text: str, source_text: str) -> str:
     return _EMOJI_RE.sub(lambda m: "" if m.group() in source_emojis else m.group(), text).strip()
 
 
+_ORPHAN_PUNCT = re.compile(r"\s*,\s*([?!])")
+_PETNAME_RE = re.compile(r"\b[Ss]ayang\b\s*[,.!]?\s*")
+
+
+def fix_orphan_punct(text: str) -> str:
+    """'mau aku bantu apa, ?' -> 'mau aku bantu apa?'"""
+    return _ORPHAN_PUNCT.sub(r"\1", text)
+
+
+def remove_pet_names(text: str) -> str:
+    """Cross-turn damper: when the previous reply already used the pet name,
+    strip it here so affection reads occasional instead of mandatory."""
+    cleaned = re.sub(r"\bsayang\b", "", text, flags=re.I)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = re.sub(r"\s+([,.!?])", r"\1", cleaned)
+    cleaned = re.sub(r"([,.!?])(?=[A-Za-z])", r"\1 ", cleaned).strip(" ,")
+    return _strip_tics(cleaned) if cleaned else text
+
+
 def _strip_tics(text: str) -> str:
     stripped = _TIC_LEAD.sub("", text.strip())
     stripped = _SENTENCE_GAS.sub("", stripped)
