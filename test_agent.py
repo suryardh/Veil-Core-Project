@@ -436,6 +436,38 @@ test("eval: closure ok short no-question", closure_ok("Oke, istirahat ya. Besok 
 test("eval: closure fail long+question",
      not closure_ok("Ngemil enak ya? Bisa aja kita lanjutin obrolan lagi nanti mau ngapain?"))
 test("eval: sayang count", sayang_count("Sayang, kamu sayang banget ya") == 2)
+print("\n--- Constraint TTL ---")
+from core.constraints import ConversationConstraints
+tr = ConversationConstraints(ttl=2)
+a1 = tr.observe("udah tau aku grogi malah nanya mulu")
+test("ttl: complaint activates avoid_questions", a1["avoid_questions"] is True)
+tr.tick()
+a2 = tr.active()
+test("ttl: persists one tick after complaint", a2.get("avoid_questions") is True)
+tr.tick()
+test("ttl: expires after ttl turns", "avoid_questions" not in tr.active())
+tr2 = ConversationConstraints()
+tr2.observe("udah dulu ya, mau istirahat")
+tr2.tick()
+a_mid = tr2.active()
+test("ttl: momentary closing vanishes after one turn",
+     "conversation_closing" not in a_mid and a_mid.get("avoid_topic_expansion") is True,
+     f"got {a_mid}")
+tr2.tick()
+tr2.tick()
+test("ttl: implied flags expire fully", not tr2.active())
+from core.evaluator import detect_unsupported_experience, detect_relationship_inference
+bad_mem = "Aku udah lupa daftar film apa aja yang mau ditonton."
+test("eval: pseudo-memory flagged without context",
+     detect_unsupported_experience(bad_mem, "") is not None)
+test("eval: experience claim ok when memory supports it",
+     detect_unsupported_experience(bad_mem, "film daftar tontonan stella") is None)
+infer_bad = detect_relationship_inference(
+    "kamu tuh ngebul deh kalau kangen",
+    "Kalau begini, berarti kamu kangen sama aku ya?")
+test("eval: relationship inference caught", infer_bad is not None, f"got {infer_bad!r}")
+test("eval: plain self-longing not flagged",
+     detect_relationship_inference("halo", "aku juga kangen kamu") is None)
 print("\n--- Conversation Constraints ---")
 from core.constraints import detect_constraints, render_constraints
 c = detect_constraints("udah dulu ya ngobrolnya, aku mau istirahat")
