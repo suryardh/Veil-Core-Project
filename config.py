@@ -15,10 +15,12 @@ N_THREADS = max(1, (os.cpu_count() or 4) // 2)
 USE_GPU = os.getenv("VEIL_USE_GPU", "1") == "1"
 
 # --- Inference Parameters ---
+# Tuned 2026-08-26 after live-sim showed word salad at temp 0.7 (MODEL-005).
 SAMPLING = {
-    "temperature": float(os.getenv("VEIL_TEMP", "0.7")),
-    "top_p": 0.95,
-    "repeat_penalty": 1.1,
+    "temperature": float(os.getenv("VEIL_TEMP", "0.6")),
+    "top_p": 0.9,
+    "min_p": 0.05,
+    "repeat_penalty": 1.15,
 }
 MAX_TOKENS = 300
 MAX_TOKENS_STREAM = 400

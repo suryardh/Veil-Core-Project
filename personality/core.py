@@ -4,7 +4,9 @@ import time
 from core.cognition import Cognition
 from core.orchestrator import is_calculator_query, is_datetime_query, is_tavily_query
 from utils.async_utils import with_retry
+from utils.logger import log
 from personality.analyzer import analyze
+from personality.conflict import on_interaction
 from personality.state import StellaState, StellaIdentity
 from personality.inactivity import InactivityContext, InactivityEffect, compute_inactivity_context, compute_inactivity_effect
 from personality.prompting import build_prompt
@@ -27,7 +29,8 @@ class PersonalityCore:
         self._last_absence_bucket: str = ""
 
     def _identity_blob(self) -> str:
-        return f"{identity.BASE_IDENTITY}\n\n{identity.LANGUAGE_RULES}\n\n{identity.BEHAVIOR_RULES}"
+        return (f"{identity.BASE_IDENTITY}\n\n{identity.LANGUAGE_RULES}\n\n"
+                f"{identity.BEHAVIOR_RULES}\n\n{identity.EXAMPLES}")
 
     def _route_tool(self, text: str) -> str | None:
         _ok = lambda r: r is not None and r.success  # noqa: E731
@@ -121,9 +124,22 @@ class PersonalityCore:
         effect = compute_inactivity_effect(self.state, now)
         self._apply_inactivity_effect(effect)
         inactivity_ctx = compute_inactivity_context(self.state, now)
-        analysis = analyze(user_input) 
+        analysis = analyze(user_input)
 
-        self.state.update_from_interaction(analysis.emotion, analysis.arousal, analysis.confidence)
+        cycle = on_interaction(self.state, user_input, analysis, now)
+        if cycle["event"] is not None:
+            ev = cycle["event"]
+            log.info("Conflict: %s severity=%.2f cooldown_until=%d",
+                     ev.category, ev.severity, self.state.cooldown_until)
+        elif cycle["apology"]:
+            log.info("Apology received (count=%d, cooldown_left=%ds)",
+                     self.state.apology_count,
+                     max(0, int(self.state.cooldown_until - now)))
+        log.debug("Drift window %s -> %s", self.state.drift_window, cycle["drift"])
+
+        self.state.update_from_interaction(
+            analysis.emotion, analysis.arousal, analysis.confidence,
+            damping=cycle.get("damping", 1.0))
         self.state.decay()
         if analysis.confidence >= 0.4:
             self.emotional_memory.record("interaction", user_input[:120], analysis.valence, analysis.arousal)
