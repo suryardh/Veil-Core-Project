@@ -216,9 +216,10 @@ pip install -r requirements.txt
 
 For RTX 4050 / CUDA-equipped GPUs — install the CUDA-enabled llama-cpp-python wheel:
 ```bash
-pip install llama-cpp-python==0.3.25 --extra-index-url https://github.com/abetlen/llama-cpp-python/releases
+pip install llama-cpp-python==0.3.25 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu125
 ```
-Then ensure `VEIL_USE_GPU=1` (default in `.env` or environment).
+Pick the `cuXXX` suffix matching your driver's max CUDA runtime (see
+`nvidia-smi` header). Then ensure `VEIL_USE_GPU=1` (default in `.env` or environment).
 
 ---
 

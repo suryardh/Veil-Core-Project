@@ -1,13 +1,13 @@
 import os
 import re
+import sys
 
 import config
 
 _USE_GPU = config.USE_GPU
 
 def _setup_cuda_paths():
-    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    site_pkg = os.path.join(base, "venv", "Lib", "site-packages")
+    site_pkg = os.path.join(sys.prefix, "Lib", "site-packages")
     for d in [
         os.path.join(site_pkg, "nvidia", "cublas", "bin"),
         os.path.join(site_pkg, "nvidia", "cuda_runtime", "bin"),
