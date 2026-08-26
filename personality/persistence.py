@@ -4,7 +4,7 @@ from memory.store import JSONStore
 from utils.logger import log
 
 DEFAULT_PATH = os.path.join("data", "state.json")
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _MIGRATIONS: dict[int, callable] = {}
 
@@ -19,6 +19,16 @@ def _migrate_v1_to_v2(raw: dict):
     raw.setdefault("baseline_mood", "neutral")
     raw.setdefault("emotional_mode", "neutral")
     raw.setdefault("mode_strength", 0.0)
+
+@_register(2)
+def _migrate_v2_to_v3(raw: dict):
+    """Conflict dynamics fields (personality/conflict.py). Safe defaults."""
+    raw.setdefault("conflict_severity", 0.0)
+    raw.setdefault("conflict_ts", 0.0)
+    raw.setdefault("cooldown_until", 0.0)
+    raw.setdefault("apology_count", 0)
+    raw.setdefault("pending_recovery", {})
+    raw.setdefault("drift_window", [])
 
 def _run_migrations(raw: dict, from_version: int):
     for v in range(from_version, SCHEMA_VERSION):

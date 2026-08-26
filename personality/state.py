@@ -27,6 +27,13 @@ class StellaState:
     baseline_mood: str = "warm"
     emotional_mode: str = "yearning"
     mode_strength: float = 0.5
+    # Conflict dynamics (schema v3 — see personality/conflict.py)
+    conflict_severity: float = 0.0
+    conflict_ts: float = 0.0
+    cooldown_until: float = 0.0
+    apology_count: int = 0
+    pending_recovery: dict = field(default_factory=dict)
+    drift_window: list = field(default_factory=list)
 
     _decay_rates: dict = field(default_factory=lambda: {
         "affection": 0.998,
@@ -36,23 +43,23 @@ class StellaState:
         "dependency": 0.998,
     })
 
-    def update_from_interaction(self, emotion: str, intensity: float, confidence: float):
+    def update_from_interaction(self, emotion: str, intensity: float, confidence: float, damping: float = 1.0):
         if confidence < 0.4:
             return
         if emotion == "positive":
-            delta = 0.05 * intensity
+            delta = 0.05 * intensity * damping
             self.affection = min(1.0, self.affection + delta)
-            self.trust = min(1.0, self.trust + 0.03 * intensity)
-            self.attachment = min(1.0, self.attachment + 0.02 * intensity)
-            self.comfort = min(1.0, self.comfort + 0.04 * intensity)
-            self.dependency = min(1.0, self.dependency + 0.01 * intensity)
+            self.trust = min(1.0, self.trust + 0.03 * intensity * damping)
+            self.attachment = min(1.0, self.attachment + 0.02 * intensity * damping)
+            self.comfort = min(1.0, self.comfort + 0.04 * intensity * damping)
+            self.dependency = min(1.0, self.dependency + 0.01 * intensity * damping)
         elif emotion == "intimate":
-            delta = 0.08 * intensity
+            delta = 0.08 * intensity * damping
             self.affection = min(1.0, self.affection + delta)
-            self.trust = min(1.0, self.trust + 0.05 * intensity)
-            self.attachment = min(1.0, self.attachment + 0.06 * intensity)
-            self.comfort = min(1.0, self.comfort + 0.07 * intensity)
-            self.dependency = min(1.0, self.dependency + 0.03 * intensity)
+            self.trust = min(1.0, self.trust + 0.05 * intensity * damping)
+            self.attachment = min(1.0, self.attachment + 0.06 * intensity * damping)
+            self.comfort = min(1.0, self.comfort + 0.07 * intensity * damping)
+            self.dependency = min(1.0, self.dependency + 0.03 * intensity * damping)
         elif emotion == "negative":
             delta = 0.06 * intensity
             self.affection = max(0.0, self.affection - delta)
@@ -98,6 +105,12 @@ class StellaState:
             "baseline_mood": self.baseline_mood,
             "emotional_mode": self.emotional_mode,
             "mode_strength": self.mode_strength,
+            "conflict_severity": self.conflict_severity,
+            "conflict_ts": self.conflict_ts,
+            "cooldown_until": self.cooldown_until,
+            "apology_count": self.apology_count,
+            "pending_recovery": self.pending_recovery,
+            "drift_window": self.drift_window,
         }
 
     @classmethod
@@ -112,4 +125,10 @@ class StellaState:
             baseline_mood=str(data.get("baseline_mood", "warm")),
             emotional_mode=str(data.get("emotional_mode", "yearning")),
             mode_strength=float(data.get("mode_strength", 0.5)),
+            conflict_severity=float(data.get("conflict_severity", 0.0)),
+            conflict_ts=float(data.get("conflict_ts", 0.0)),
+            cooldown_until=float(data.get("cooldown_until", 0.0)),
+            apology_count=int(data.get("apology_count", 0)),
+            pending_recovery=dict(data.get("pending_recovery", {}) or {}),
+            drift_window=list(data.get("drift_window", []) or []),
         )
