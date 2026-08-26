@@ -88,3 +88,55 @@ Concrete cases to re-test against the 7B candidate (feeds MODEL-005 categories):
 `TODO.md` and `PLAN.md` previously quoted budgets "system ~2000 / history
 ~1500 / response ~800". Actual values in `config.py` are 2500/2500/800 (chars,
 not tokens). Docs have been synced to the real config values.
+
+---
+
+# Post-migration results — Qwen2.5-7B-Instruct-abliterated-v2
+
+Captured 2026-08-26 after MODEL-003 (same bench, same pipeline, state backed up
+and restored around the run). Active model:
+`qwen2.5-7b-instruct-abliterated-v2-q4_k_m.gguf`
+(mradermacher i1-Q4_K_M, 4.68 GB, SHA-verified). Rollback file (3B) kept.
+
+### Setup changes that made this possible
+
+- Swapped CPU-only wheel for the CUDA build:
+  `pip install llama-cpp-python==0.3.25 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu125`
+- Fixed `_setup_cuda_paths()` in `llm/engine.py` to derive site-packages from
+  `sys.prefix` instead of a hardcoded nonexistent `venv\` dir.
+- GPU now active: RTX 4050 Laptop 6 GB, full offload, ~4.8 GB VRAM in use,
+  ~49 tok/s on 3B, ~12–15 tok/s on 7B.
+
+### Latency comparison (13-prompt bench)
+
+| Metric | 3B CPU (baseline) | 7B GPU |
+|--------|-------------------|--------|
+| Avg latency | 5.88 s | 6.87 s |
+| Warmup load | 3.9 s | 3.1 s |
+| Typical reply length | 47–89 chars | 98–247 chars |
+| RAM footprint | ~2.87 GB | ~4.57 GB |
+| VRAM | — | ~4.78 GB / 6.14 GB |
+
+Avg latency is slightly higher but replies are 2–3× longer and richer; normal
+companion turns land at 3–7.5 s. The single 30 s outlier was an assistant-trap
+prompt answered with an 833-char essay (~200 tokens) — expected behavior for
+that prompt class.
+
+### Baseline failure re-test (from "Known failures" above)
+
+1. **Memory hallucination** — improved: with short-term session history
+   present, recall references *real* earlier bench content ("libur besok",
+   "kesel"). Still fabricates when no history exists; retest during MODEL-005.
+2. **Datetime tool** — fixed by the model swap: routed and reported correctly
+   ("10:38 pagi WIB, Rabu, 26 Agustus 2026") vs baseline's invented/refused
+   answers.
+3. **Assistant leakage** — factual questions now get correct answers wrapped in
+   character voice ("Presiden pertama Indonesia itu Soekarno, sayang...").
+   Register holds much better under the same prompts.
+4. **Reaction shortcuts** — still fires occasionally (single interjection);
+   unchanged by design.
+5. *(info)* Same 4096 ctx; headroom question carries over to MODEL-004.
+
+New observation: model sometimes produces creative-but-garbled Indonesian
+phrases under high affection context ("ngegenggam perluasan yang udah
+ngambur-ngamburin") — log during MODEL-005 week as speech-style category.

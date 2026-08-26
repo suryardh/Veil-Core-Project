@@ -124,20 +124,23 @@ in `CANDIDATES.md`.
 
 ## MODEL-003 — Install Qwen 7B Q4-class GGUF
 
+**Result (2026-08-26):** done — GPU enabled + model swapped in one pass.
+Details and comparison numbers in `BASELINE.md` ("Post-migration results").
+
 **Tasks**
-- [ ] Download model.
-- [ ] Verify file integrity.
-- [ ] Store model outside source-controlled files.
-- [ ] Update local model configuration.
-- [ ] Confirm model loads.
-- [ ] Run one minimal generation test.
+- [x] Download model. (`mradermacher i1-Q4_K_M`, 4.68 GB, byte-count verified)
+- [x] Verify file integrity. (Content-Length match; SHA check optional later)
+- [x] Store model outside source-controlled files. (`models/`, gitignored)
+- [x] Update local model configuration. (`config.py`; 3B kept as rollback)
+- [x] Confirm model loads. (~6.5s load, full GPU offload)
+- [x] Run one minimal generation test. (+ full 13-prompt bench vs baseline)
 
 **Acceptance criteria**
-- Model loads and generates a valid response through the existing runtime.
+- [x] Model loads and generates a valid response through the existing runtime.
 
 **Do not**
-- Commit multi-GB model files.
-- Remove the old working model yet.
+- [x] Commit multi-GB model files.
+- [x] Remove the old working model yet.
 
 ---
 
