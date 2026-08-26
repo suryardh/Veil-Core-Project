@@ -1,8 +1,14 @@
 from llm.engine import LLMEngine
 from memory.long_term import LongTermMemory
 from memory.short_term import ShortTermMemory
-from utils.text import sanitize_llm_output
+from utils.text import sanitize_llm_output, collapse_sayang, strip_emojis_from_source
 import config
+
+
+def _polish(response: str, user_text: str) -> str:
+    response = sanitize_llm_output(response)
+    response = collapse_sayang(response)
+    return strip_emojis_from_source(response, user_text)
 
 
 class VeilAgent:
@@ -51,10 +57,10 @@ class VeilAgent:
     def generate(self, system: str, user_input: str, observation: str = "") -> str:
         prompt = self._assemble_prompt(system, user_input, observation)
         response = self.llm.generate(prompt)
-        response = sanitize_llm_output(response)
         full_input = user_input
         if observation:
             full_input += f"\n\n{observation[:500]}"
+        response = _polish(response, full_input)
         self.short_memory.add_message("user", full_input)
         self.short_memory.add_message("assistant", response)
         return response
@@ -65,6 +71,6 @@ class VeilAgent:
         for token in self.llm.stream(prompt):
             full_response += token
             yield token
-        full_response = sanitize_llm_output(full_response)
+        full_response = _polish(full_response, user_input)
         self.short_memory.add_message("user", user_input)
         self.short_memory.add_message("assistant", full_response)
