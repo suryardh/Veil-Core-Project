@@ -15,7 +15,7 @@
 |------|-------|
 | Model | `models/qwen2.5-3b-instruct-q4_k_m.gguf` (Q4_K_M, ~2.1 GB) |
 | Context | `N_CTX = 4096` (train context 32768 — llama.cpp warns on load) |
-| Context budgets (chars) | system 2500 / history 2500 / response 800 (`config.py`) |
+| Context budgets | chars, not tokens — see `config.py` (`CTX_PROMPT_CHAR_LIMIT` guard, measured in `tools/ctx_report.py`) |
 | Sampling | temperature 0.7, top_p 0.95, repeat_penalty 1.1 |
 | Max tokens | 300 (generate), 400 (stream) |
 | Threads | `cpu_count // 2` |

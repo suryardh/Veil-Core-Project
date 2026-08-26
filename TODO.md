@@ -148,36 +148,43 @@ Details and comparison numbers in `BASELINE.md` ("Post-migration results").
 
 **Goal:** replace assumptions inherited from the 3B configuration with measured values.
 
-**Current baseline**
-
-Actual values from `config.py` (chars, not tokens — see `BASELINE.md`):
+**Result (2026-08-26):** measured via `tools/ctx_report.py` using the real
+Qwen2.5 tokenizer. Indonesian averages **~4.1 chars/token**. System prompt is
+202–267 tokens; worst-case assembled prompt ≈ 2,100 tokens vs 3,796 available
+(N_CTX 4096 − response reserve) — fits with ~1,700 tokens spare. The old
+budgets were CHARACTERS misread as token limits; a hard guard
+(`CTX_PROMPT_CHAR_LIMIT`) now replaces the left-truncating formula that could
+destroy the system block on oversized input. Dead config
+(`CTX_BUDGET_SYSTEM/RESPONSE`) removed.
 
 ```text
-system:   ~2500
-history:  ~2500
-response:  ~800
+measured (chars/tokens):
+system prompt      865-1157 / 202-267
+history worst      6647 / 1663  (before soft-budget truncation)
+observation max     500 / 139
+hard guard        CTX_PROMPT_CHAR_LIMIT ≈ 14.5k chars
 ```
 
 **Tasks**
-- [ ] Measure actual system prompt size.
-- [ ] Measure character prompt size.
-- [ ] Measure state injection.
-- [ ] Measure memory injection.
-- [ ] Measure history.
-- [ ] Determine actual model context limit.
-- [ ] Define response reserve.
-- [ ] Add safety headroom.
-- [ ] Update `config.py`.
-- [ ] Test short conversation.
-- [ ] Test long conversation.
-- [ ] Test memory-heavy conversation.
-- [ ] Test truncation behavior.
+- [x] Measure actual system prompt size. (865–1157 chars / 202–267 tokens)
+- [x] Measure character prompt size. (identity blob 669 chars, inside system)
+- [x] Measure state injection. (~200 chars natural language)
+- [x] Measure memory injection. (emotional summary ≤5×60 chars; bounded)
+- [x] Measure history. (worst legal: 16×500c → truncated to budget)
+- [x] Determine actual model context limit. (N_CTX=4096 active; 32k train headroom unused)
+- [x] Define response reserve. (MAX_TOKENS_STREAM 400 folded into hard limit)
+- [x] Add safety headroom. (64 tokens)
+- [x] Update `config.py`. (CTX_PROMPT_CHAR_LIMIT ≈ 14.5k chars, unit-documented)
+- [x] Test short conversation. (bench + suite LLM section)
+- [x] Test long conversation. (16-message history guard tests)
+- [x] Test memory-heavy conversation. (ctx_report scenario rows)
+- [x] Test truncation behavior. (6 deterministic guard tests — oldest dropped first, system never cut)
 
 **Acceptance criteria**
-- No expected prompt path overflows.
-- Character-critical instructions remain intact.
-- History truncation is deterministic.
-- Memory injection is bounded.
+- [x] No expected prompt path overflows.
+- [x] Character-critical instructions remain intact.
+- [x] History truncation is deterministic.
+- [x] Memory injection is bounded.
 
 ---
 

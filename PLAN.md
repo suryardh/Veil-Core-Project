@@ -113,13 +113,10 @@ Do not blindly copy the old numbers.
 
 ### Current baseline
 
-Actual values from `config.py` (chars, not tokens — see `BASELINE.md`):
-
-```text
-System:   ~2,500
-History:  ~2,500
-Response:   ~800
-```
+Budgets are CHARACTERS enforced via a hard prompt limit (measured against the
+real tokenizer in `tools/ctx_report.py` — Indonesian ≈ 4.1 chars/token).
+Worst-case assembled prompt ≈ 2,100 tokens vs ~3,800 available at N_CTX=4096.
+See `BASELINE.md` and `config.py` for current values.
 
 ### Tasks
 
