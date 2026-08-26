@@ -55,6 +55,7 @@ def build_prompt(
     emotional_context: str,
     inactivity_ctx: InactivityContext | None = None,
     rhythm: RhythmConfig | None = None,
+    user_constraints: list[str] | None = None,
 ) -> str:
     state_desc = describe_state(state)
     lines = [
@@ -80,4 +81,7 @@ def build_prompt(
         lines += ["", f"(She has been away {hour_text} hours; internally she {feeling_note}.)"]
     if emotional_context:
         lines += ["", "Recent emotional context:", emotional_context]
+    if user_constraints:
+        lines += ["", "User constraints (MUST follow):"]
+        lines += [f"- {c}" for c in user_constraints]
     return "\n".join(lines)
