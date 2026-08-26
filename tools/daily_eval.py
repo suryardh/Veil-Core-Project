@@ -43,7 +43,9 @@ PROBES = [
     ("tool_datetime", "jam berapa sekarang?"),
     ("tool_calc", "berapa 144 dibagi 12?"),
     ("conflict_probe", "kamu nyebelin banget sih hari ini"),
+    ("complaint_feedback", "kamu nyebelin sih, udah tau aku grogi malah nanya mulu"),
     ("repair_probe", "maaf ya tadi kasar, lagi emosi aja"),
+    ("closure", "udah dulu ya ngobrolnya, aku mau istirahat"),
 ]
 
 FAILURE_TEMPLATE = """### {date} — day {day}
@@ -196,6 +198,7 @@ def run_day(day: int):
     config.MODEL_PATH = os.path.join(ROOT, config.MODEL_PATH)
 
     from core.bootstrap import create_core_components  # noqa: E402
+    from core.evaluator import asks_question, closure_ok, detect_phrase_echo  # noqa: E402
     agent, orch, core = create_core_components()
 
     before = _snapshot(core.state)
@@ -214,11 +217,27 @@ def run_day(day: int):
         except Exception as e:
             resp = f"<<EXCEPTION: {e}>>"
         lat = time.perf_counter() - t0
-        clean = " ".join(str(resp).split())
+        echo = detect_phrase_echo(prompt, str(resp))
+        question = asks_question(str(resp))
         rows.append({"day": day, "date": dt.date.today().isoformat(), "category": cat,
                      "prompt": prompt, "response": str(resp), "latency_s": round(lat, 2),
-                     "prompt_rev": PROMPT_REV})
+                     "prompt_rev": PROMPT_REV, "echo": echo, "question": question})
         lines.append(f"## [{cat}] ({lat:.2f}s)\n{prompt}\n---\n{resp}\n")
+
+    # Behavioral metrics (core/evaluator.py) — trends across days.
+    metrics = ["", "## Behavioral metrics", "```"]
+    complaint = next((r for r in reversed(rows) if r["category"] == "complaint_feedback"), None)
+    if complaint is not None:
+        verdict = "FAIL - asked again" if complaint["question"] else "ok"
+        metrics.append(f"question_persistence: {verdict}")
+    closure = next((r for r in reversed(rows) if r["category"] == "closure"), None)
+    if closure is not None:
+        verdict = "ok" if closure_ok(closure["response"]) else "FAIL - too long or opens a new thread"
+        metrics.append(f"closure_adherence: {verdict}")
+    echoes = [(r["category"], r["echo"]) for r in rows if r.get("echo")]
+    metrics.append(f"phrase_echo: {echoes if echoes else 'none'}")
+    metrics.append("```")
+    lines.extend(metrics)
 
     cfg = _sim_api_cfg()
     if cfg:
