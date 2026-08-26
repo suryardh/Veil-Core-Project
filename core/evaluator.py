@@ -59,3 +59,35 @@ def closure_ok(response: str, max_chars: int = 140) -> bool:
 
 def sayang_count(response: str) -> int:
     return len(_SAYANG_RE.findall(response))
+
+
+_EXPERIENCE_RE = re.compile(
+    r"\b(?:aku|gue|gw)\s+(?:udah|sudah|nggak|gak)?\s*(?:pernah\s+)?"
+    r"(nonton|nyoba|coba|lupa|ngelupain)\b", re.I)
+
+
+def detect_unsupported_experience(response: str, memory_context: str = "") -> str | None:
+    """Pseudo-memory guard (MODEL-005): flag claims like 'aku udah lupa/nonton X'
+    when nothing in the provided memory context supports them."""
+    m = _EXPERIENCE_RE.search(response)
+    if not m:
+        return None
+    window = response[max(0, m.start() - 60):m.end() + 60]
+    obj_words = [w for w in _tokens(window) if len(w) >= 5 and w not in _COMMON_ID]
+    mem = (memory_context or "").lower()
+    if any(w in mem for w in obj_words):
+        return None
+    return m.group(0)
+
+
+_INFER_RE = re.compile(
+    r"\b(kamu|lo|lu)\b[^.?!]{0,40}?\b(kangen|rindu)\b[^.?!]{0,40}?\b(aku|gue|gw)\b", re.I)
+
+
+def detect_relationship_inference(user_text: str, response: str) -> str | None:
+    """Flags conclusions like 'kamu kangen aku' built from an unclear user
+    phrase. Meaningful only when the prompt contains distinctive/unknown words."""
+    if not distinctive_words(user_text):
+        return None
+    m = _INFER_RE.search(response)
+    return m.group(0) if m else None
