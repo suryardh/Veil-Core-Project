@@ -112,7 +112,8 @@ _PETNAME_RE = re.compile(r"\b[Ss]ayang\b\s*[,.!]?\s*")
 
 
 def fix_orphan_punct(text: str) -> str:
-    """'mau aku bantu apa, ?' -> 'mau aku bantu apa?'"""
+    """'mau aku bantu apa, ?' / 'apa,,?' -> 'mau aku bantu apa?'"""
+    text = re.sub(r",{2,}", ",", text)
     return _ORPHAN_PUNCT.sub(r"\1", text)
 
 
