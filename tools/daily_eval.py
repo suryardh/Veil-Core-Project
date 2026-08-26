@@ -99,17 +99,27 @@ def _sim_api_cfg():
 
 
 def _oppo_reply(cfg, messages):
+    """One reply from the opponent LLM. Retries once because reasoning models
+    occasionally spend the whole token budget on analysis -> empty content."""
     import requests
-    resp = requests.post(
-        f"{cfg['base']}/chat/completions",
-        headers={"Authorization": f"Bearer {cfg['key']}"},
-        json={"model": cfg["model"], "messages": messages,
-              "max_tokens": 400, "temperature": 0.95,
-              "reasoning_effort": os.getenv("SIM_REASONING_EFFORT", "low")},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return (resp.json()["choices"][0]["message"]["content"] or "").strip()
+    diag = ""
+    for attempt in range(2):
+        resp = requests.post(
+            f"{cfg['base']}/chat/completions",
+            headers={"Authorization": f"Bearer {cfg['key']}"},
+            json={"model": cfg["model"], "messages": messages,
+                  "max_tokens": 600, "temperature": 0.95,
+                  "reasoning_effort": os.getenv("SIM_REASONING_EFFORT", "low")},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        choice = resp.json()["choices"][0]
+        content = (choice["message"].get("content") or "").strip()
+        if content:
+            return content
+        diag = (f"empty content, finish_reason={choice.get('finish_reason')}, "
+                f"reasoning_chars={len(choice['message'].get('reasoning') or '')}")
+    raise RuntimeError(f"opponent gave no content after retry ({diag})")
 
 
 def run_sim_session(core, cfg, mood_index: int, turns: int = 10):
@@ -200,6 +210,7 @@ def run_day(day: int):
     from core.bootstrap import create_core_components  # noqa: E402
     from core.evaluator import asks_question, closure_ok, detect_phrase_echo  # noqa: E402
     agent, orch, core = create_core_components()
+    core.reactions_enabled = False  # 1-token reaction shortcuts pollute metrics
 
     before = _snapshot(core.state)
     opener = core.initiative_cue()

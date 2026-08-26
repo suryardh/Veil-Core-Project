@@ -149,7 +149,11 @@ class PersonalityCore:
         self._update_emotional_mode(analysis)
 
         rhythm = compute_rhythm(self.state, analysis)
-        reaction = try_reaction(self.state, analysis, self.last_reaction_ts, _random, now)
+        # Probabilistic interjection shortcuts are disabled during evaluation
+        # runs (they bypass the LLM entirely -> 1-token replies pollute metrics).
+        reaction = None
+        if getattr(self, "reactions_enabled", True):
+            reaction = try_reaction(self.state, analysis, self.last_reaction_ts, _random, now)
         if reaction is not None:
             self.last_reaction_ts = now
             self.state.last_interaction_ts = now

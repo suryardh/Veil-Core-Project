@@ -37,6 +37,7 @@ def main():
     mood = MOODS[args.mood % len(MOODS)]
 
     agent, orch, core = create_core_components()
+    core.reactions_enabled = False  # live review wants full LLM replies, not shortcuts
     s = core.state
     print(f"=== LIVE SIM | opponent={cfg['model']} | mood: {mood} ===")
     print(f"start state: aff={s.affection:.3f} trust={s.trust:.3f} "
@@ -49,7 +50,11 @@ def main():
                 starter = ("[Mulailah percakapan dulu sesuai suasana hatimu]"
                            if t == 0 else "[Balas pesan terakhir Stella]")
                 messages.append({"role": "user", "content": starter})
-            opp = _oppo_reply(cfg, messages)
+            try:
+                opp = _oppo_reply(cfg, messages)
+            except Exception as e:
+                print(f"[{t + 1}] (lawan error: {e})")
+                break
             if not opp or "[SELESAI]" in opp.upper():
                 print(f"[{t + 1}] (lawan menutup obrolan)")
                 break
