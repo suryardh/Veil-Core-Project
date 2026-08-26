@@ -253,6 +253,40 @@ finally:
         import shutil
         shutil.rmtree(TEST_BDIR)
 
+# ── 4c. CONTEXT BUDGET GUARD (deterministic) ──────────────────
+
+print("\n--- Context Budget Guard ---")
+try:
+    agent = object.__new__(VeilAgent)
+    agent.short_memory = ShortTermMemory(limit=8)
+    SYSTEM = "IDENTITY-MARKER " + ("x" * 200)
+    BIG = ("kalimat panjang bahasa indonesia untuk mengisi riwayat obrolan " * 8)[:400]
+
+    for i in range(16):
+        agent.short_memory.add_message("user" if i % 2 == 0 else "assistant", BIG + f" [{i}]")
+
+    p = agent._assemble_prompt(SYSTEM, "halo")
+    test("guard: prompt within hard limit", len(p) <= config.CTX_PROMPT_CHAR_LIMIT,
+         f"got {len(p)} > {config.CTX_PROMPT_CHAR_LIMIT}")
+    test("guard: system block intact under full history", p.startswith(f"<|im_start|>system\n{SYSTEM}<|im_end|>\n"))
+    test("guard: ends with assistant suffix", p.endswith("<|im_start|>assistant\n"))
+    test("guard: oldest dropped, newest kept",
+         "[0]" not in p.split("<|im_start|>user")[1] and "[14]" in p)
+
+    p2 = agent._assemble_prompt(SYSTEM, "A" * 30000)
+    test("guard: giant input capped", len(p2) <= config.CTX_PROMPT_CHAR_LIMIT,
+         f"got {len(p2)}")
+    test("guard: system survives giant input", p2.startswith(f"<|im_start|>system\n{SYSTEM}<|im_end|>\n"))
+
+    agent.small = ShortTermMemory(limit=8)
+    agent.short_memory.clear()
+    agent.short_memory.add_message("user", "pesan-pertama-yang-harus-hilang")
+    agent.short_memory.add_message("assistant", "ok")
+    p3 = agent._assemble_prompt(SYSTEM, "halo lagi")
+    test("guard: normal path keeps short history", "pesan-pertama-yang-harus-hilang" in p3)
+finally:
+    pass
+
 print("\n--- Orchestrator ---")
 orch = Orchestrator()
 orch.register_tool("calculator", CalculatorTool())
