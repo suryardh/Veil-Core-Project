@@ -24,10 +24,13 @@ MAX_TOKENS = 300
 MAX_TOKENS_STREAM = 400
 STOP_TOKENS = ["<|im_end|>"]
 
-# --- Context Budget (character proxies for token limits) ---
-CTX_BUDGET_SYSTEM = 2500
-CTX_BUDGET_HISTORY = 2500
-CTX_BUDGET_RESPONSE = 800
+# --- Context Budget (CHARACTERS, not tokens — measured in tools/ctx_report.py) ---
+# Qwen2.5 tokenizer averages ~4.1 chars/token on Indonesian text.
+# Hard guard: assembled prompt stays <= CTX_PROMPT_CHAR_LIMIT so that
+# prompt tokens + streaming response fit inside N_CTX with 64-token headroom.
+# History is truncated FIRST (oldest dropped); the system block is never cut.
+CTX_PROMPT_CHAR_LIMIT = int((N_CTX - MAX_TOKENS_STREAM - 64) * 4.0)  # ≈ 14_544
+CTX_BUDGET_HISTORY = 2500  # soft target for normal operation
 
 # --- Memory Configuration ---
 LONG_TERM_MEMORY_PATH = os.path.join("memory", "long_term.json")

@@ -25,38 +25,42 @@ class VeilAgent:
             blocks.append(f"<|im_start|>{role}\n{content}<|im_end|>")
         return "\n".join(blocks)
 
-    @staticmethod
-    def _build_full_input(user_input: str, observation: str = "") -> str:
+    def _assemble_prompt(self, system: str, user_input: str, observation: str = "") -> str:
+        """Build the final prompt. The system block is never truncated; when
+        space runs out, history is dropped oldest-first, then the user input
+        is tail-capped. Deterministic (MODEL-004)."""
         full_input = user_input
         if observation:
             full_input += f"\n\n{observation[:500]}"
-        return full_input
 
-    def _build_prompt(self, system: str, user_input: str, observation: str = "") -> str:
-        history = self._format_history_as_chat()
-        history = self._truncate(history, config.CTX_BUDGET_HISTORY)
-        sep = "\n" if history else ""
-        full_input = self._build_full_input(user_input, observation)
-        return (
-            f"<|im_start|>system\n{system}<|im_end|>\n"
-            f"{history}{sep}"
-            f"<|im_start|>user\n{full_input}<|im_end|>\n"
-            f"<|im_start|>assistant\n"
+        sys_block = f"<|im_start|>system\n{system}<|im_end|>\n"
+        limit = config.CTX_PROMPT_CHAR_LIMIT
+        max_input = limit // 2
+        if len(full_input) > max_input:
+            full_input = "..." + full_input[-(max_input - 3):]
+        user_block = f"<|im_start|>user\n{full_input}<|im_end|>\n<|im_start|>assistant\n"
+
+        hist_budget = min(
+            config.CTX_BUDGET_HISTORY,
+            max(0, limit - len(sys_block) - len(user_block)),
         )
+        history = self._truncate(self._format_history_as_chat(), hist_budget)
+        sep = "\n" if history else ""
+        return f"{sys_block}{history}{sep}{user_block}"
 
     def generate(self, system: str, user_input: str, observation: str = "") -> str:
-        prompt = self._build_prompt(system, user_input, observation)
-        budget = config.CTX_BUDGET_SYSTEM + config.CTX_BUDGET_HISTORY + len(user_input) + 500
-        prompt = self._truncate(prompt, budget)
+        prompt = self._assemble_prompt(system, user_input, observation)
         response = self.llm.generate(prompt)
         response = sanitize_llm_output(response)
-        full_input = self._build_full_input(user_input, observation)
+        full_input = user_input
+        if observation:
+            full_input += f"\n\n{observation[:500]}"
         self.short_memory.add_message("user", full_input)
         self.short_memory.add_message("assistant", response)
         return response
 
     def chat_stream(self, user_input: str):
-        prompt = self._build_prompt("You are Stella, a companion.", user_input)
+        prompt = self._assemble_prompt("You are Stella, a companion.", user_input)
         full_response = ""
         for token in self.llm.stream(prompt):
             full_response += token
