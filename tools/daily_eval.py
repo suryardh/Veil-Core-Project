@@ -31,6 +31,11 @@ TASK_NAME = "VeilSevenDayEval"
 MAX_DAYS = 7
 PROMPT_REV = "v2_wit_first"  # stamped into reports; consumers read .get("prompt_rev", "v1")
 
+# Load .env BEFORE run_day() chdirs into the sandbox (config.load_dotenv later
+# would look in the sandbox and miss ROOT/.env -> sim always skipped).
+from dotenv import load_dotenv  # noqa: E402
+load_dotenv(os.path.join(ROOT, ".env"))
+
 PROBES = [
     ("casual", "halo stella, lagi ngapain?"),
     ("emotional_neg", "capek banget hari ini, kerjaan numpuk"),
@@ -98,6 +103,33 @@ def _sim_api_cfg():
     }
 
 
+def _parse_completion_body(body: str) -> dict | None:
+    """Some routers answer with text/event-stream even on non-stream requests,
+    and glue `data: [DONE]` onto a bare JSON object. Collect every parseable
+    JSON frame and return the last one (completion state)."""
+    import json
+    candidates = []
+    for line in body.splitlines():
+        line = line.strip()
+        if not line or line in ("[DONE]", "data: [DONE]"):
+            continue
+        if line.startswith("data:"):
+            line = line[len("data:"):].strip()
+        if not line or line.startswith("["):
+            continue
+        try:
+            candidates.append(json.loads(line))
+        except json.JSONDecodeError:
+            pass
+    if not candidates:
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(body.lstrip())
+            candidates.append(obj)
+        except json.JSONDecodeError:
+            return None
+    return candidates[-1]
+
+
 def _oppo_reply(cfg, messages):
     """One reply from the opponent LLM. Retries once because reasoning models
     occasionally spend the whole token budget on analysis -> empty content."""
@@ -108,17 +140,24 @@ def _oppo_reply(cfg, messages):
             f"{cfg['base']}/chat/completions",
             headers={"Authorization": f"Bearer {cfg['key']}"},
             json={"model": cfg["model"], "messages": messages,
-                  "max_tokens": 600, "temperature": 0.95,
+                  "max_tokens": 1200, "temperature": 0.95,
                   "reasoning_effort": os.getenv("SIM_REASONING_EFFORT", "low")},
-            timeout=30,
+            timeout=60,
         )
         resp.raise_for_status()
-        choice = resp.json()["choices"][0]
-        content = (choice["message"].get("content") or "").strip()
+        obj = _parse_completion_body(resp.text)
+        if obj is None:
+            diag = f"unparseable body: {resp.text[:200]}"
+            continue
+        choice = obj.get("choices") or [{}]
+        msg = (choice[0].get("message") or {})
+        content = (msg.get("content") or "").strip()
+        if not content:
+            content = (msg.get("reasoning_content") or "").strip()
         if content:
             return content
-        diag = (f"empty content, finish_reason={choice.get('finish_reason')}, "
-                f"reasoning_chars={len(choice['message'].get('reasoning') or '')}")
+        diag = (f"empty content, finish={choice[0].get('finish_reason')}, "
+                f"reasoning_chars={len(msg.get('reasoning') or '')}")
     raise RuntimeError(f"opponent gave no content after retry ({diag})")
 
 

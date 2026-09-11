@@ -56,6 +56,7 @@ def build_prompt(
     inactivity_ctx: InactivityContext | None = None,
     rhythm: RhythmConfig | None = None,
     user_constraints: list[str] | None = None,
+    user_facts: str | None = None,
 ) -> str:
     state_desc = describe_state(state)
     lines = [
@@ -84,4 +85,8 @@ def build_prompt(
     if user_constraints:
         lines += ["", "User constraints (MUST follow):"]
         lines += [f"- {c}" for c in user_constraints]
+    if user_facts:
+        lines += [""]
+        lines += ["User facts (from long-term memory):"]
+        lines += [user_facts]
     return "\n".join(lines)

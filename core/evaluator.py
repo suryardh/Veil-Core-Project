@@ -35,15 +35,27 @@ def distinctive_words(text: str, min_len: int = 5) -> list[str]:
 
 
 def detect_phrase_echo(user_text: str, response: str, min_len: int = 5) -> str | None:
-    """Return the response token that echoes a distinctive user word
-    (prefix match catches inflections like ngebul -> ngebul-bulein)."""
-    stems = {w[:4] for w in distinctive_words(user_text, min_len)}
+    """Return the response token that echoes a distinctive user word.
+
+    Only counts as echo when the match mirrors the user's opening (first 3
+    content tokens of the reply) or recycles the same word 2+ times —
+    mid-sentence topic continuation ("kerjaan" when the topic IS work) is
+    natural, not mirroring."""
+    stems = {w[:4] for w in distinctive_words(user_text, min_len) if not w.startswith("stella")}
     if not stems:
         return None
-    for tok in _tokens(response):
-        for stem in stems:
-            if tok.startswith(stem):
-                return tok
+    toks = _tokens(response)
+    matched = [t for t in toks if any(t.startswith(s) for s in stems)]
+    if not matched:
+        return None
+    opening = [t for t in toks[:3] if any(t.startswith(s) for s in stems)]
+    repeats = max(matched.count(t) for t in set(matched)) >= 2
+    if opening or repeats:
+        return matched[0]
+    # Hyphen-reduplication of a user word ("ngebul-bulein") = voice parroting.
+    for m in re.finditer(r"([a-z']+)[-\u2013]([a-z']+)", response.lower()):
+        if any(m.group(1).startswith(s) or m.group(2).startswith(s) for s in stems):
+            return m.group(1) or m.group(2)
     return None
 
 

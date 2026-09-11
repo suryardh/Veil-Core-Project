@@ -95,6 +95,15 @@ try:
     for f in data3:
         if "Rei" in f["content"]:
             test("importance 4 for personal facts", f.get("importance") == 4, f"got {f.get('importance')}")
+
+    # Seed-frame gating: only explicit remember-requests become facts.
+    seed = extract_fact("inget ya, aku ulang tahun bulan depan. jangan lupa")
+    casual = extract_fact("halo stella, lagi ngapain?")
+    probe = extract_fact("eh, kapan ulang tahun aku?")
+    test("seed frame flagged", seed["seeded"] and seed["content"] == "Aku ulang tahun bulan depan.")
+    test("casual input not a seed", not casual["seeded"])
+    test("question probe not a seed", not probe["seeded"])
+    test("extractor strips 'jangan lupa' tail", "jangan lupa" not in seed["content"])
 finally:
     if os.path.exists(TEST_LTM_PATH):
         os.remove(TEST_LTM_PATH)

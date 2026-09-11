@@ -154,6 +154,7 @@ def remove_pet_names(text: str) -> str:
     cleaned = re.sub(r"\s+", " ", cleaned)
     cleaned = re.sub(r"\s+([,.!?])", r"\1", cleaned)
     cleaned = re.sub(r"([,.!?])(?=[A-Za-z])", r"\1 ", cleaned).strip(" ,")
+    cleaned = fix_orphan_punct(cleaned)
     return _strip_tics(cleaned) if cleaned else text
 
 

@@ -15,6 +15,8 @@ from personality.rhythm import compute_rhythm, try_reaction, ReactionResult, Rhy
 from personality import stella as identity
 from personality.persistence import save_state, load_state
 from memory.emotional import EmotionalMemory
+from memory.extractor import extract_fact
+from memory.long_term import LongTermMemory
 
 
 class PersonalityCore:
@@ -29,6 +31,7 @@ class PersonalityCore:
         self.last_reaction_ts: float = 0.0
         self._last_initiative_ts: float = 0.0
         self._last_absence_bucket: str = ""
+        self.long_memory = LongTermMemory()
 
     def _identity_blob(self) -> str:
         return (f"{identity.BASE_IDENTITY}\n\n{identity.LANGUAGE_RULES}\n\n"
@@ -177,8 +180,17 @@ class PersonalityCore:
         emotional_summary = self.emotional_memory.emotional_summary()
         cflags = self.constraints.observe(user_input)
         constraints = render_constraints(cflags)
+
+        fact = extract_fact(user_input)
+        if fact["seeded"]:
+            self.long_memory.remember(fact["type"], fact["content"], fact["importance"])
+        user_facts = self.long_memory.get_relevant_facts(user_input)
+        if user_facts.startswith("Belum ada"):
+            user_facts = ""
+
         system = build_prompt(self._identity_blob(), self.state, emotional_summary,
-                              inactivity_ctx, rhythm, user_constraints=constraints)
+                              inactivity_ctx, rhythm, user_constraints=constraints,
+                              user_facts=user_facts)
 
         reply = self.agent.generate(system, user_input, cognition_context,
                                     closing=cflags.get("conversation_closing", False),
