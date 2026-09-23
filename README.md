@@ -103,42 +103,44 @@ python app_tui.py
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#e1f5fe', 'primaryBorderColor': '#0288d1', 'tertiaryColor': '#fff'}}}%%
 flowchart TB
-    User([User Input])
+    Input([User Input])
 
-    subgraph Emotion["Emotion Layer"]
+    subgraph EMOTION["Emotion Layer"]
+        direction TB
         Analyzer[analyzer.py<br/>keyword - emotion detection]
         State[state.py<br/>relationship update + decay]
-        Emotional[emotional.py<br/>memory record]
+        EmoMem[emotional.py<br/>memory record]
+        Analyzer --> State --> EmoMem
     end
 
-    subgraph Decision["Decision Layer"]
+    subgraph DECIDE["Decision Layer"]
+        direction TB
         React{reaction<br/>override?}
         CogCheck{cognition<br/>needed?}
         ToolCheck{tool<br/>needed?}
+        React --> CogCheck --> ToolCheck
     end
 
-    subgraph Execution["Execution Layer"]
+    subgraph ROUTE["Execution Layer"]
+        direction TB
         Cognition[cognition.py<br/>search - extract - summarize]
         Tool[orchestrator.py<br/>run_tool]
         Direct[direct chat]
     end
 
-    subgraph Response["Response Layer"]
+    subgraph RENDER["Response Layer"]
+        direction TB
         Prompt[prompting.py<br/>state to natural language]
         Agent[agent.py<br/>build prompt + history]
         LLM[engine.py<br/>llama.cpp]
+        Prompt --> Agent --> LLM
     end
 
-    User --> Analyzer
-    Analyzer --> State
-    State --> Emotional
-    Emotional --> React
+    Input --> EMOTION
+    EMOTION --> React
 
-    React -->|yes| Return([Return reaction])
-    React -->|no| CogCheck
-
+    React -->|yes| Out([Return reaction])
     CogCheck -->|yes| Cognition
-    CogCheck -->|no| ToolCheck
     ToolCheck -->|calc/datetime/tavily| Tool
     ToolCheck -->|no| Direct
 
@@ -146,9 +148,7 @@ flowchart TB
     Tool --> Prompt
     Direct --> Prompt
 
-    Prompt --> Agent
-    Agent --> LLM
-    LLM --> Response
+    LLM --> Out2([Response])
 ```
 
 ---
