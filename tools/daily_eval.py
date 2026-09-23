@@ -86,7 +86,12 @@ OPPONENT_SYSTEM = (
     "atau bersikap seperti customer service; kamu yang cerita, tanya, dan menggoda. "
     "Suasanamu hari ini: {mood}. "
     "Gaya: bahasa Indonesia gaul sehari-hari, singkat (1-3 kalimat), boleh typo "
-    "atau singkatan (gak, udh, wkwk). Jangan pernah menyebut dirimu AI. "
+    "atau singkatan (gak, udh, wkwk). "
+    "PENTING: dalam riwayat chat, pesan berperan 'user' adalah kata-kata Stella "
+    "dan pesan berperan 'assistant' adalah balasanmu sebagai manusia. Balas pesan "
+    "Stella yang terakhir. JANGAN pernah menganalisis percakapan, meragukan "
+    "peranmu, atau menulis monolog batin — langsung balas seperti manusia biasa. "
+    "Jangan pernah menyebut dirimu AI. "
     "Kalau obrolan sudah cukup lama dan wajar untuk berakhir, balas persis: [SELESAI]"
 )
 
@@ -130,35 +135,65 @@ def _parse_completion_body(body: str) -> dict | None:
     return candidates[-1]
 
 
+def _sim_log(mood: str) -> list:
+    """Transcript for the opponent model: the opponent speaks in the 'assistant'
+    channel, Stella's lines land in 'user'. Stated explicitly in the system
+    prompt so reasoning models don't re-derive (and invert) the mapping."""
+    return [{"role": "system", "content": OPPONENT_SYSTEM.format(mood=mood)}]
+
+
+def _sim_append_turn(messages: list, opp: str, stella: str) -> None:
+    messages.append({"role": "user", "content": stella})
+    messages.append({"role": "assistant", "content": opp})
+
+
 def _oppo_reply(cfg, messages):
-    """One reply from the opponent LLM. Retries once because reasoning models
-    occasionally spend the whole token budget on analysis -> empty content."""
+    """One reply from the opponent LLM. Retries on transient HTTP errors and
+    skips responses where the model vomited its chain-of-thought instead."""
     import requests
     diag = ""
-    for attempt in range(2):
-        resp = requests.post(
-            f"{cfg['base']}/chat/completions",
-            headers={"Authorization": f"Bearer {cfg['key']}"},
-            json={"model": cfg["model"], "messages": messages,
-                  "max_tokens": 1200, "temperature": 0.95,
-                  "reasoning_effort": os.getenv("SIM_REASONING_EFFORT", "low")},
-            timeout=60,
-        )
-        resp.raise_for_status()
-        obj = _parse_completion_body(resp.text)
-        if obj is None:
-            diag = f"unparseable body: {resp.text[:200]}"
-            continue
-        choice = obj.get("choices") or [{}]
-        msg = (choice[0].get("message") or {})
-        content = (msg.get("content") or "").strip()
-        if not content:
-            content = (msg.get("reasoning_content") or "").strip()
-        if content:
+    for attempt in range(3):
+        try:
+            resp = requests.post(
+                f"{cfg['base']}/chat/completions",
+                headers={"Authorization": f"Bearer {cfg['key']}"},
+                json={"model": cfg["model"], "messages": messages,
+                      "max_tokens": 1200, "temperature": 0.95,
+                      "reasoning_effort": os.getenv("SIM_REASONING_EFFORT", "low")},
+                timeout=60,
+            )
+            if resp.status_code in (410, 429, 500, 502, 503, 504):
+                diag = f"HTTP {resp.status_code}"
+                time.sleep(1 + attempt)
+                continue
+            resp.raise_for_status()
+            obj = _parse_completion_body(resp.text)
+            if obj is None:
+                diag = f"unparseable body: {resp.text[:200]}"
+                continue
+            choice = (obj.get("choices") or [{}])[0]
+            content = ((choice.get("message") or {}).get("content") or "").strip()
+            if not content or _is_thinking_dump(content):
+                diag = (f"content_bad={bool(content)} finish={choice.get('finish_reason')}, "
+                        f"reasoning_chars={len((choice.get('message') or {}).get('reasoning') or '')}")
+                continue
             return content
-        diag = (f"empty content, finish={choice[0].get('finish_reason')}, "
-                f"reasoning_chars={len(msg.get('reasoning') or '')}")
-    raise RuntimeError(f"opponent gave no content after retry ({diag})")
+        except requests.exceptions.RequestException as e:
+            diag = f"{type(e).__name__}: {e}"
+            time.sleep(1 + attempt)
+    raise RuntimeError(f"opponent gave no usable reply after retry ({diag})")
+
+
+def _is_thinking_dump(content: str) -> bool:
+    """Reasoning models sometimes stream their chain-of-thought into 'content'
+    instead of the answer. Signals: long self-talk in English tool-y prose."""
+    content = content.strip("` \n")
+    if content.startswith("```"):
+        return True
+    markers = ("Let me", "Okay, let", "First, I need", "I need to consider",
+               "Wait,", "Hmm,", "The user is saying", "As an AI", "I should respond as")
+    return len(content) > 400 and any(content.startswith(m) or f"\n\n{m}" in content
+                                      for m in markers)
 
 
 def run_sim_session(core, cfg, mood_index: int, turns: int = 10):
@@ -166,13 +201,11 @@ def run_sim_session(core, cfg, mood_index: int, turns: int = 10):
     mood = MOODS[mood_index % len(MOODS)]
     md = [f"\n## Simulated session — opponent: `{cfg['model']}`, mood: {mood}\n"]
     rows = []
-    messages = [{"role": "system", "content": OPPONENT_SYSTEM.format(mood=mood)}]
+    messages = _sim_log(mood)
     try:
         for t in range(turns):
-            if messages[-1]["role"] != "user":
-                starter = ("[Mulailah percakapan dulu sesuai suasana hatimu]"
-                           if t == 0 else "[Balas pesan terakhir Stella]")
-                messages.append({"role": "user", "content": starter})
+            if not any(m["role"] == "assistant" for m in messages):
+                messages.append({"role": "user", "content": "[STELLA diam menunggumu menyapa lebih dulu]"})
             opp = _oppo_reply(cfg, messages)
             if not opp or "[SELESAI]" in opp.upper():
                 break
@@ -185,7 +218,7 @@ def run_sim_session(core, cfg, mood_index: int, turns: int = 10):
                          "category": f"sim_t{t + 1}", "prompt": opp,
                          "response": stella, "latency_s": round(lat, 2),
                          "prompt_rev": PROMPT_REV})
-            messages.append({"role": "user", "content": stella})
+            _sim_append_turn(messages, opp, stella)
         if len(rows) < 3:
             md.append("_Sesi berlaku sangat pendek — cek respons lawan di atas._")
     except Exception as e:

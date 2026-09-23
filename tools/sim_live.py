@@ -29,7 +29,7 @@ def main():
     config.MODEL_PATH = os.path.join(ROOT, config.MODEL_PATH)
 
     from core.bootstrap import create_core_components  # noqa: E402
-    from daily_eval import MOODS, OPPONENT_SYSTEM, _oppo_reply, _sim_api_cfg  # noqa: E402
+    from daily_eval import MOODS, OPPONENT_SYSTEM, _oppo_reply, _sim_api_cfg, _sim_log, _sim_append_turn  # noqa: E402
 
     cfg = _sim_api_cfg()
     if not cfg:
@@ -43,18 +43,12 @@ def main():
     print(f"start state: aff={s.affection:.3f} trust={s.trust:.3f} "
           f"mode={s.emotional_mode}({s.mode_strength:.2f})\n")
 
-    messages = [{"role": "system", "content": OPPONENT_SYSTEM.format(mood=mood)}]
+    messages = _sim_log(mood)
     try:
         for t in range(args.turns):
-            if messages[-1]["role"] != "user":
-                starter = ("[Mulailah percakapan dulu sesuai suasana hatimu]"
-                           if t == 0 else "[Balas pesan terakhir Stella]")
-                messages.append({"role": "user", "content": starter})
-            try:
-                opp = _oppo_reply(cfg, messages)
-            except Exception as e:
-                print(f"[{t + 1}] (lawan error: {e})")
-                break
+            if not any(m["role"] == "assistant" for m in messages):
+                messages.append({"role": "user", "content": "[STELLA diam menunggumu menyapa lebih dulu]"})
+            opp = _oppo_reply(cfg, messages)
             if not opp or "[SELESAI]" in opp.upper():
                 print(f"[{t + 1}] (lawan menutup obrolan)")
                 break
@@ -63,7 +57,7 @@ def main():
             stella = str(core.handle(opp))
             lat = time.perf_counter() - t0
             print(f"    STELLA ({lat:.1f}s): {stella}\n", flush=True)
-            messages.append({"role": "user", "content": stella})
+            _sim_append_turn(messages, opp, stella)
     except KeyboardInterrupt:
         print("\n(stopped)")
     finally:
