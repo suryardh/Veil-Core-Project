@@ -101,54 +101,22 @@ python app_tui.py
 # Architecture
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#e1f5fe', 'primaryBorderColor': '#0288d1', 'tertiaryColor': '#fff'}}}%%
-flowchart TB
-    Input([User Input])
-
-    subgraph EMOTION["Emotion Layer"]
-        direction TB
-        Analyzer[analyzer.py<br/>keyword - emotion detection]
-        State[state.py<br/>relationship update + decay]
-        EmoMem[emotional.py<br/>memory record]
-        Analyzer --> State --> EmoMem
-    end
-
-    subgraph DECIDE["Decision Layer"]
-        direction TB
-        React{reaction<br/>override?}
-        CogCheck{cognition<br/>needed?}
-        ToolCheck{tool<br/>needed?}
-        React --> CogCheck --> ToolCheck
-    end
-
-    subgraph ROUTE["Execution Layer"]
-        direction TB
-        Cognition[cognition.py<br/>search - extract - summarize]
-        Tool[orchestrator.py<br/>run_tool]
-        Direct[direct chat]
-    end
-
-    subgraph RENDER["Response Layer"]
-        direction TB
-        Prompt[prompting.py<br/>state to natural language]
-        Agent[agent.py<br/>build prompt + history]
-        LLM[engine.py<br/>llama.cpp]
-        Prompt --> Agent --> LLM
-    end
-
-    Input --> EMOTION
-    EMOTION --> React
-
+flowchart LR
+    Input([User Input]) --> Analyzer[analyzer.py<br/>emotion detection]
+    Analyzer --> State[state.py<br/>relationship update + decay]
+    State --> React{reaction<br/>override?}
     React -->|yes| Out([Return reaction])
-    CogCheck -->|yes| Cognition
-    ToolCheck -->|calc/datetime/tavily| Tool
-    ToolCheck -->|no| Direct
-
-    Cognition --> Prompt
+    React -->|no| CogCheck{cognition<br/>needed?}
+    CogCheck -->|yes| Cognition[cognition.py<br/>search - extract - summarize]
+    CogCheck -->|no| ToolCheck{tool<br/>needed?}
+    ToolCheck -->|calc/datetime/tavily| Tool[orchestrator.py<br/>run_tool]
+    ToolCheck -->|no| Direct[direct chat]
+    Cognition --> Prompt[prompting.py<br/>state to natural language]
     Tool --> Prompt
     Direct --> Prompt
-
-    LLM --> Out2([Response])
+    Prompt --> Agent[agent.py<br/>build prompt + history]
+    Agent --> LLM[engine.py<br/>llama.cpp]
+    LLM --> OutFinal([Response])
 ```
 
 ---
