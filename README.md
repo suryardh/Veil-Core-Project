@@ -28,12 +28,15 @@ beyond an agent with personality
 - **No mode switching** — dynamic state modulation replaces rigid mode toggles
 - **Identity permanence** — humor, warmth, teasing, emotional openness, protectiveness as fixed traits
 - **No numeric values in prompts** — state mapped to natural language descriptors
+- **Conflict dynamics** — directed insults trigger cooling, withdrawn mode, gradual recovery, reconciliation halving; third-party venting and neutral chat are ignored
+- **Persona rules v3.1** — centralized rules (`personality/rules.py`) with pseudo-memory and relationship-inference guards (Stella never invents experiences her memory doesn't support or assumes feelings about the user without evidence)
 - **Trust default 0.35** — prevents premature guarded mood after first decay
 
 ## Memory System
 
-- **Short-term memory** — recent conversation with 4k budget, chat-template format, ignore/truncate rules
-- **Long-term memory** — persistent JSON, per-tier quota (5 importance + 5 recency), dedup, structured extraction
+- **Short-term memory** — recent conversation with 8-message / chat-template budget, ignore/truncate rules
+- **Long-term memory** — persistent JSON (up to 500 facts), relevance-scored injection (top 10), dedup, keyword-importance extraction
+- **Fact extraction** — `memory/extractor.py` turns seeds ("aku ulang tahun bulan depan") into importance-weighted facts
 - **Emotional memory** — valence/arousal records with recurrence merging and salience filtering
 
 ## Tool System
@@ -58,6 +61,28 @@ Tool routing runs **after** cognition — cognition tried first, then tool routi
 - Search query auto-cleaned: `"halo, cari kurs dollar"` → `"kurs dollar"`
 - Uses Tavily `include_answer` + `search_depth=advanced` for richer results (AI answer + 3 snippets)
 - Results injected as natural continuation in user message (no `=== Search Results ===` delimiter)
+
+## Behavioral Evaluator (deterministic)
+
+`core/evaluator.py` — pure, no-LLM metrics for regression and nightly eval:
+
+- **Phrase echo** — user's distinctive words reused instead of clarified (opening mirror, same-stem repeats, hyphen-reduplication)
+- **Question persistence** — asking again right after a complaint
+- **Closure adherence** — short reply, no new question when the user says goodbye
+- **Pet-name frequency** — "sayang" capped per message
+
+`core/constraints.py` — hard reply requirements (no questions, forced closure) with turn-based TTL expiry.
+
+## Evaluation Harness (nightly)
+
+`tools/daily_eval.py` — scheduled 7-day eval (the personality core runs in an isolated sandbox with its own memory/state):
+
+- **Probes** — casual, emotional, memory seed+recall, tool accuracy, boundary-AI, refusal, assistant-trap, conflict, complaint, repair, closure
+- **Behavioral metrics** — question persistence, closure adherence, phrase echo
+- **LLM-vs-LLM sim session** — optional; drives an "opponent" (OpenAI-compatible endpoint via `.env`) through banter turns to test long-session stability
+- **State snapshot** — drift window, relationship dims, mode/stage before/after
+
+`tools/sim_live.py` — manual single-turn banter against any OpenAI-compatible model.
 
 ## TUI (Optional)
 
@@ -135,12 +160,15 @@ Veil/
 ├── app.py                      ← CLI entry point
 ├── app_tui.py                  ← TUI entry point (rich, split-panel)
 ├── config.py                   ← all tunables + .env
-├── test_agent.py               ← 85 assertions
+├── test_agent.py               ← 133 assertions
 │
 ├── core/
 │   ├── bootstrap.py            ← App startup consolidation
 │   ├── cognition.py            ← invisible search→extract→summarize
 │   ├── orchestrator.py         ← pure infra boundary (run_tool)
+│   ├── evaluator.py            ← behavioral metrics (phrase echo, closure, questions)
+│   ├── constraints.py          ← hard reply requirements with TTL expiry
+│   ├── formatter.py            ← tool-result formatting (text/json)
 │   └── agent.py                ← LLM wrapper + history
 │
 ├── llm/
@@ -148,9 +176,9 @@ Veil/
 │
 ├── memory/
 │   ├── emotional.py            ← valence/arousal records, salience filter
-│   ├── extractor.py            ← structured fact extraction
-│   ├── short_term.py           ← 4k budget, chat-template format
-│   ├── long_term.py            ← JSON, importance (explicit)
+│   ├── extractor.py            ← keyword importance scoring + seed pairs
+│   ├── short_term.py           ← 8-msg budget, chat-template format
+│   ├── long_term.py            ← JSON, 500-fact cap, relevance injection
 │   └── store.py                ← atomic persistence
 │
 ├── personality/
@@ -159,17 +187,20 @@ Veil/
 │   ├── analyzer.py             ← keyword → EmotionAnalysis
 │   ├── prompting.py            ← state → natural language descriptor
 │   ├── stella.py               ← identity constants (base, rules, safety)
-│   ├── persistence.py          ← save/load state.json (schema v2)
+│   ├── rules.py                ← centralized personality rules (v3.1)
+│   ├── conflict.py             ← insult detection, cooling, recovery, drift
+│   ├── persistence.py          ← save/load state.json (schema v3)
 │   ├── inactivity.py           ← absence detection + relationship deltas
 │   ├── initiative.py           ← probabilistic openers on user return
-│   └── rhythm.py               ← 7-priority matrix + mode modulation + reactions
+│   └── rhythm.py               ← priority matrix + mode modulation + reactions
 │
 ├── tools/
 │   ├── base.py                 ← BaseTool + ToolResult + ToolContext
 │   ├── state_backup.py         ← manual backup/restore data/state.json
 │   ├── bench.py                ← fixed-prompt benchmark (baseline comparison)
 │   ├── ctx_report.py           ← context budget measurement (tokenizer-based)
-│   ├── daily_eval.py           ← MODEL-005 seven-day evaluation harness
+│   ├── daily_eval.py           ← scheduled 7-day eval (probes + sim + metrics)
+│   ├── sim_live.py             ← manual opponent banter (OpenAI-compatible)
 │   ├── web/
 │   │   └── search.py           ← Tavily REST + _CachedMixin
 │   └── system/
@@ -179,7 +210,7 @@ Veil/
 ├── utils/
 │   ├── logger.py               ← structured logging
 │   ├── async_utils.py          ← with_retry (used by search)
-│   └── text.py                 ← LLM output sanitization
+│   └── text.py                 ← LLM output sanitization (unicode, orphan punct, pet-name damper)
 │
 ├── requirements.txt
 ├── README.md
@@ -227,52 +258,49 @@ Pick the `cuXXX` suffix matching your driver's max CUDA runtime (see
 
 # Model Setup
 
-Recommended: **Qwen2.5-3B-Instruct Q4_K_M GGUF**
+Active model: **Qwen2.5-7B-Instruct-abliterated-v2 Q4_K_M GGUF**
+(Rollback baseline: `qwen2.5-3b-instruct-q4_k_m.gguf`, see `BASELINE.md`.)
 
 Place inside `models/`:
 ```
-models/qwen2.5-3b-instruct-q4_k_m.gguf
+models/qwen2.5-7b-instruct-abliterated-v2-q4_k_m.gguf
 ```
 
 Inference backend: llama.cpp via `llama-cpp-python`
 
 ## Model Integration Map
 
-Where the model touches the codebase (MODEL-001 inventory):
+Where the model touches the codebase:
 
 ```text
 config.py                    ← all model knobs
-├── MODEL_PATH               models/qwen2.5-3b-instruct-q4_k_m.gguf
+├── MODEL_PATH               models/qwen2.5-7b-instruct-abliterated-v2-q4_k_m.gguf
 ├── N_CTX=4096  N_THREADS    loaded by llm/engine.py LLMEngine.__init__
-├── USE_GPU                  → n_gpu_layers=-1 when enabled
+├── USE_GPU                  → n_gpu_layers=-1 when enabled (default on)
 ├── SAMPLING / MAX_TOKENS    merged in engine._default_params()
 ├── STOP_TOKENS              ["<|im_end|>"]
-└── CTX_BUDGET_*             char budgets applied in core/agent.py
+└── CTX_PROMPT_CHAR_LIMIT    char guard applied in core/agent.py (≈14.5k chars)
 
 Call chain (one generation):
 personality/core.py PersonalityCore.handle(user_input)
   → core/agent.py VeilAgent.generate(system, user_input, observation)
       builds raw ChatML (<|im_start|>system/user/assistant<|im_end|>)
-      truncates history/prompt via _truncate() + CTX_BUDGET_*
+      truncates history/prompt via _truncate() + CTX_PROMPT_CHAR_LIMIT
   → llm/engine.py LLMEngine.generate(prompt)
-      llama_cpp.Llama(...) call with SAMPLING params
+      llama_cpp.Llama(...) call with SAMPLING params (temp 0.6, top_p 0.9)
 
 Persistence around it:
-  state: personality/persistence.py ↔ data/state.json (schema v2)
-  short-term memory: memory/short_term.py (in-memory, cap limit×2 msgs, 500 chars/msg)
+  state: personality/persistence.py ↔ data/state.json (schema v3)
+  short-term memory: memory/short_term.py (8 messages, 500 chars/msg)
   long-term memory: memory/long_term.py ↔ memory/long_term.json
 ```
 
-### Assumptions tied to the current 3B model
+### Runtime notes
 
-- Filename hardcoded in `config.MODEL_PATH` and in bootstrap's error message.
-- ChatML `<|im_start|>/<|im_end|>` matches Qwen2 template — any Qwen2-family
-  GGUF is drop-in; other families need prompt-format changes.
-- Context budgets are **characters**, not tokens (~3.5–4 chars/token for
-  Indonesian) — never validated against real tokenization (see MODEL-004).
-- N_CTX=4096 vs model's 32k training context — large unused headroom.
-- Installed wheel is CPU-only and `_setup_cuda_paths()` targets a nonexistent
-  `venv\` dir — GPU is currently not used (details in `BASELINE.md`).
+- Sampling tuned 2026-08-26 after live-sim showed word salad at temp 0.7 (MODEL-005).
+- ChatML `<|im_start|>/<|im_end|>` matches Qwen2 template — any Qwen2-family GGUF is drop-in; other families need prompt-format changes.
+- Context budget is enforced in **characters** (~4.0–4.1 chars/token for Indonesian), measured by `tools/ctx_report.py` — the assembled prompt stays under `CTX_PROMPT_CHAR_LIMIT` so prompt + streaming response fit `N_CTX` with headroom.
+- N_CTX=4096 vs the model's larger trained context — headroom chosen for CPU/GPU speed on limited VRAM.
 
 ---
 
@@ -280,19 +308,22 @@ Persistence around it:
 
 Main config in `config.py`:
 - CPU thread allocation
-- Sampling parameters (temp, top_p, repeat_penalty)
+- Sampling parameters (temp 0.6, top_p 0.9, min_p 0.05, repeat_penalty 1.15)
 - Context size (4096)
-- Context budgeting (system: 2.5k, history: 2.5k, response: 800)
+- Context guard (`CTX_PROMPT_CHAR_LIMIT` ≈ 14.5k chars, history soft budget 2.5k)
 - Max tokens: 300 (normal), 400 (stream)
-- Memory limits
+- Memory limits (8-message short-term, 500-fact long-term)
 - Search timeout & cache size
-- GPU mode toggle (`USE_GPU`)
+- GPU mode toggle (`USE_GPU`, default yes)
 
 Environment overrides:
 ```bash
 USE_GPU=1              # GPU mode (default) | 0 = CPU-only
-VEIL_TEMP=0.9
+VEIL_TEMP=0.6
 TAVILY_API_KEY=tvly-...
+SIM_API_KEY=...        # OpenAI-compatible key for the eval sim opponent
+SIM_BASE_URL=...       # e.g. https://api.groq.com/openai/v1
+SIM_MODEL=...          # model name served by that endpoint
 ```
 
 ---
@@ -308,6 +339,17 @@ python app.py
 ```bash
 python app_tui.py
 ```
+
+### Nightly evaluation
+```bash
+python tools/daily_eval.py --now          # run today's day immediately
+python tools/daily_eval.py --schedule 21:00   # register a daily Windows task
+```
+
+Reports and data land in `logs/eval/`:
+- `day_NN_YYYY-MM-DD.md` — human-readable report with probes, metrics, sim transcript, state before/after
+- `responses.jsonl` — full per-probe rows (append-only, day-queried)
+- `state_history.csv` — relationship dimension traces
 
 ---
 
@@ -339,19 +381,16 @@ automatically.
 python test_agent.py
 ```
 
-85 tests (passing):
-- calculator (6)
-- datetime (4)
-- long-term memory (6)
-- short-term memory (4)
-- emotional analysis (11)
-- state management (6)
-- emotional memory (4)
+133 tests (passing), split:
+
+- tool system — calculator + datetime (10)
+- long-term memory + fact extraction (9)
+- short-term memory overflow (4)
+- emotional analysis + state + emotional memory (19)
 - state backup/restore (10)
-- context budget guard (7)
-- conflict dynamics (19)
-- orchestrator (1)
-- LLM integration (3)
+- context budget guard (10)
+- conflict/cooldown/recovery + sanitizer + evaluator + constraints/TTL (65)
+- LLM-dependent e2e — chat, calculator-via-orch, stream (3)
 
 ---
 
