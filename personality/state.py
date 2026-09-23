@@ -49,14 +49,16 @@ class StellaState:
         if emotion == "positive":
             delta = 0.05 * intensity * damping
             self.affection = min(1.0, self.affection + delta)
-            self.trust = min(1.0, self.trust + 0.03 * intensity * damping)
+            # MODEL-011: saturate trust — gains shrink near 1.0 so repeated
+            # small talk can't ratchet it to max (was linear).
+            self.trust = min(1.0, self.trust + 0.03 * intensity * damping * (1.0 - self.trust))
             self.attachment = min(1.0, self.attachment + 0.02 * intensity * damping)
             self.comfort = min(1.0, self.comfort + 0.04 * intensity * damping)
             self.dependency = min(1.0, self.dependency + 0.01 * intensity * damping)
         elif emotion == "intimate":
             delta = 0.08 * intensity * damping
             self.affection = min(1.0, self.affection + delta)
-            self.trust = min(1.0, self.trust + 0.05 * intensity * damping)
+            self.trust = min(1.0, self.trust + 0.05 * intensity * damping * (1.0 - self.trust))
             self.attachment = min(1.0, self.attachment + 0.06 * intensity * damping)
             self.comfort = min(1.0, self.comfort + 0.07 * intensity * damping)
             self.dependency = min(1.0, self.dependency + 0.03 * intensity * damping)

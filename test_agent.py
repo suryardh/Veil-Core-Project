@@ -180,6 +180,14 @@ s2 = StellaState()
 s2.update_from_interaction("intimate", 1.0, 0.95)
 test("intimate boosts stage", s2.stage_label() != "kenalan")
 
+sat = StellaState(trust=0.98)
+sat.update_from_interaction("positive", 1.0, 1.0)
+test("trust saturates near 1.0", sat.trust <= 0.99, f"got {sat.trust}")
+low = StellaState(trust=0.4)
+low.update_from_interaction("positive", 1.0, 1.0)
+test("trust rises faster from low base", low.trust - 0.4 > sat.trust - 0.98,
+     f"low delta={low.trust - 0.4:.4f} high delta={sat.trust - 0.98:.4f}")
+
 print("\n--- Emotional Memory ---")
 TEST_EM_PATH = "logs/test_emotional.json"
 try:
@@ -472,6 +480,38 @@ test("ttl: momentary closing vanishes after one turn",
 tr2.tick()
 tr2.tick()
 test("ttl: implied flags expire fully", not tr2.active())
+
+# MODEL-011: repeat-echo and question-spam policy.
+from core.constraints import render_constraints
+tr3 = ConversationConstraints()
+stella_echo_msg = "Wkwk mantap! 10:30 oke banget, ketemu di Kopi Alam Semesta ya"
+tr3.observe(stella_echo_msg)  # first send
+tr3.note_reply("hehe makasih ya, sampe ketemu nanti!")
+a_echo = tr3.observe(stella_echo_msg + "!!")  # near-identical resend
+test("policy: repeat echo flagged on near-duplicate user turn",
+     a_echo.get("repeat_echo") is True, f"got {a_echo}")
+tr3.note_reply("iyaa, jangan lupa ya!")
+a_fresh = tr3.observe("eh btw besok makan siang di mana enaknya ya?")
+test("policy: different turn not a repeat echo",
+     a_fresh.get("repeat_echo") is not True, f"got {a_fresh}")
+
+spam = ConversationConstraints()
+spam.note_reply("udah makan belum? kamu sibuk apa aja tadi?")  # question streak 1
+spam.note_reply("oh gitu ya? terus kamu mau ngapain?" )  # streak 2
+aft = spam.observe("aku lagi galau nih")
+test("policy: question spam forces no-question turn",
+     aft.get("avoid_questions") is True and aft.get("question_quota") is True, f"got {aft}")
+spam.note_reply("semangat ya, pasti lewat kok.")  # non-question resets
+aft2 = spam.observe("galau gara-gara kerjaan disalahin")
+test("policy: question streak resets on non-question reply",
+     aft2.get("avoid_questions") is not True, f"got {aft2}")
+rq = render_constraints(aft)
+test("policy: question quota rendered",
+     any("must NOT" in r and "ask a question" in r for r in rq), f"got {rq}")
+rr = render_constraints(a_echo)
+test("policy: repeat echo rendered",
+     any("Do NOT restate" in r and "DIFFERENT" in r for r in rr), f"got {rr}")
+
 from core.evaluator import detect_unsupported_experience, detect_relationship_inference
 bad_mem = "Aku udah lupa daftar film apa aja yang mau ditonton."
 test("eval: pseudo-memory flagged without context",

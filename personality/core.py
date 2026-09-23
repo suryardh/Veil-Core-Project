@@ -195,5 +195,6 @@ class PersonalityCore:
         reply = self.agent.generate(system, user_input, cognition_context,
                                     closing=cflags.get("conversation_closing", False),
                                     no_questions=cflags.get("avoid_questions", False))
+        self.constraints.note_reply(reply)
         self.constraints.tick()
         return reply
