@@ -3,6 +3,8 @@
 > Living document. Update whenever priorities or architectural decisions change.
 > `AGENT.md` remains the source of truth for engineering rules and architecture.
 > This document defines **what we prioritize and why**.
+>
+> **Current roadmap status:** Phase 0 — Repository Audit is the active priority. Existing roadmap phases remain preserved, but work that changes models or architecture should wait until the audit exit criteria are met.
 
 ---
 
@@ -41,6 +43,124 @@ The runtime should remain model- and platform-independent where practical.
 
 ---
 
+# Phase 0 — Repository Audit (ACTIVE PRIORITY)
+
+## Goal
+
+Establish an evidence-based picture of the current repository, runtime behavior, data safety, and measured baseline before selecting the next implementation task.
+
+This phase does **not** cancel the existing roadmap. It validates its assumptions and determines whether Phase 1 should proceed as written or be adjusted.
+
+## Constraints
+
+- Do not rewrite working systems merely to match a proposed architecture.
+- Do not replace the current model during the audit.
+- Do not delete, reset, or migrate real user state as part of testing.
+- Keep `state.json`, memory stores, model files, and local changes recoverable.
+- Avoid adding TTS, Live2D, or new platform dependencies before the core interfaces are understood.
+- Treat `DESIGN.md` as a proposed target design pending audit, not as proof that the repository already follows it.
+- Keep `AGENT.md` as the source of truth for engineering rules and architecture.
+
+## AUDIT-001 — Capture the Current Baseline
+
+- [ ] Record repository status, current branch, and uncommitted changes.
+- [ ] Identify the actual Python/runtime environment and supported target environment.
+- [ ] Record model file, model variant, quantization, context length, and generation settings.
+- [ ] Verify which model the runtime actually loads; reconcile discrepancies between code, config, and documentation.
+- [ ] Record inference backend and available CPU/GPU acceleration.
+- [ ] Run existing tests and record failures without silently fixing unrelated issues.
+- [ ] Run the existing smoke test, if available.
+- [ ] Record latency, memory use, and representative conversation behavior where practical.
+- [ ] Compare the observed setup with `BASELINE.md` and document stale or conflicting claims.
+
+**Output:** a dated baseline note with environment, model/config, test results, known limitations, and measurements.
+
+## AUDIT-002 — Trace the Current Request Lifecycle
+
+- [ ] Trace the actual entry point into the runtime.
+- [ ] Follow a user message through prompt/context construction and the LLM call.
+- [ ] Identify where character identity and instructions are defined.
+- [ ] Identify where dynamic state and relationship variables are read and updated.
+- [ ] Identify how short-term history is assembled and truncated.
+- [ ] Identify how long-term memories are stored, selected, and injected.
+- [ ] Identify tools, evaluators, post-processing, and output handling.
+- [ ] Record important implicit assumptions, including single-user/session assumptions.
+- [ ] Draw an as-is flow diagram from the code, not from intended architecture.
+
+**Output:** a short request-lifecycle diagram and a list of responsibilities, dependencies, and observed coupling.
+
+## AUDIT-003 — Protect Persistent Data
+
+- [ ] Locate all persistent state and memory files.
+- [ ] Document current schemas and version fields.
+- [ ] Create a backup/export of relevant persistent data before any potentially destructive test.
+- [ ] Verify that a backup can be restored to a temporary location.
+- [ ] Inspect migration behavior and determine whether failures preserve the original source.
+- [ ] Identify unsafe direct-write paths and missing validation.
+- [ ] Do not perform experimental migrations on the only copy of real data.
+
+**Output:** a data inventory, verified backup/restore procedure, and list of persistence risks.
+
+## AUDIT-004 — Establish a Regression Baseline
+
+- [ ] Collect a small set of representative prompts and expected behavior.
+- [ ] Include Indonesian naturalness, character adherence, emotional context, memory, long conversations, and assistant-style leakage.
+- [ ] Record current outputs before changing prompts, model, state logic, or retrieval.
+- [ ] Separate reproducible failures from subjective impressions.
+- [ ] Keep test inputs free of secrets and unnecessary personal data.
+
+**Output:** a small repeatable benchmark and a log of current failures.
+
+## AUDIT-005 — Classify Existing Modules
+
+For each important module, choose one disposition:
+
+- **KEEP** — working and appropriately scoped.
+- **REFACTOR** — useful behavior, but boundaries or implementation need improvement.
+- **REPLACE** — evidence shows the current implementation cannot meet requirements.
+- **DEFER** — not needed for the current goal.
+
+Review at minimum:
+
+- [ ] Bootstrap and configuration.
+- [ ] LLM engine/model loading.
+- [ ] Character identity and prompt construction.
+- [ ] Emotional state and relationship logic.
+- [ ] Short-term conversation history.
+- [ ] Long-term memory storage and retrieval.
+- [ ] Persistence and migrations.
+- [ ] Tests, benchmark scripts, and documentation.
+- [ ] Platform-specific code and assumptions.
+
+**Output:** a module disposition table with evidence, risk, and suggested next action for each major area.
+
+## AUDIT-006 — Decide the Migration Path
+
+- [ ] Compare the existing implementation with the proposed boundaries in `DESIGN.md`.
+- [ ] Identify which roadmap assumptions remain valid.
+- [ ] Decide whether the next step is incremental improvement, targeted replacement, or a larger refactor.
+- [ ] Define the smallest safe next change.
+- [ ] Record rollback steps and data-protection requirements.
+- [ ] Update this plan only where audit evidence justifies a change.
+
+**Output:** a short decision record explaining what will change, what will remain, why, and how to roll back.
+
+## Phase 0 Exit Criteria
+
+Phase 0 is complete when:
+
+- [ ] The actual model/runtime configuration is verified.
+- [ ] A current request-lifecycle diagram exists.
+- [ ] Existing tests and a small behavior benchmark have recorded results.
+- [ ] Persistent state and memory have a verified backup/restore path.
+- [ ] Major modules have KEEP / REFACTOR / REPLACE / DEFER dispositions.
+- [ ] Conflicts between code, config, `BASELINE.md`, `AGENT.md`, and other docs are recorded.
+- [ ] The next implementation step is supported by evidence and has a rollback path.
+
+**Until these criteria are met, do not start a model migration or broad architecture rewrite.** Small, non-destructive fixes needed to run the audit are allowed and should be documented.
+
+---
+
 # Phase 1 — Model Migration
 
 ## Qwen 7B Evaluation
@@ -48,6 +168,8 @@ The runtime should remain model- and platform-independent where practical.
 Move from the current 3B model to a suitable Qwen 7B GGUF candidate, initially targeting Q4_K_M-class quantization.
 
 The exact model variant must be selected through evaluation rather than assuming that every Qwen 7B variant behaves identically.
+
+**Dependency:** Begin only after Phase 0 verifies the actual current model/configuration, establishes a usable baseline, and confirms a safe rollback path.
 
 ### Why first?
 
@@ -113,10 +235,9 @@ Do not blindly copy the old numbers.
 
 ### Current baseline
 
-Budgets are CHARACTERS enforced via a hard prompt limit (measured against the
-real tokenizer in `tools/ctx_report.py` — Indonesian ≈ 4.1 chars/token).
-Worst-case assembled prompt ≈ 2,100 tokens vs ~3,800 available at N_CTX=4096.
-See `BASELINE.md` and `config.py` for current values.
+Budgets are CHARACTERS enforced via a hard prompt limit (measured against the real tokenizer in `tools/ctx_report.py` — Indonesian ≈ 4.1 chars/token). Worst-case assembled prompt ≈ 2,100 tokens vs ~3,800 available at N_CTX=4096. See `BASELINE.md` and `config.py` for current values.
+
+**Audit note:** These are existing documented measurements, not yet re-verified against the current checkout/model. Confirm them during Phase 0 before relying on them.
 
 ### Tasks
 
@@ -655,6 +776,7 @@ These are intentionally not current priorities.
 
 The current roadmap is considered healthy when:
 
+- [ ] Phase 0 audit exit criteria are satisfied.
 - [ ] A 7B model has been evaluated against the current 3B baseline.
 - [ ] Context budgeting is measured rather than inherited blindly.
 - [ ] `state.json` has a reliable backup/export path.
@@ -670,26 +792,42 @@ The current roadmap is considered healthy when:
 
 # Immediate Execution Order
 
-Do not skip ahead.
+Do not skip ahead. The first goal is to establish the actual repository state without destabilizing working behavior.
 
 ```text
-1. Backup/export state.json
+1. Check git status, branch, and local changes
         ↓
-2. Inventory current 3B model/config
+2. Inventory model/runtime/config and reconcile docs
         ↓
-3. Select and test Qwen 7B candidate
+3. Trace the current request lifecycle
         ↓
-4. Recalibrate context budget
+4. Back up persistent state and verify restore to a temporary location
         ↓
-5. Begin one-week behavior log
+5. Run tests/smoke test and capture a small behavior baseline
         ↓
-6. Emotional depth improvements
+6. Classify modules and record architecture risks
         ↓
-7. Embedding research + retrieval benchmark
+7. Decide the smallest safe next change
         ↓
-8. Semantic memory implementation
+8. Resume Phase 1: evaluate Qwen 7B candidate
         ↓
-9. Choose one platform
+9. Recalibrate context budget using measured tokenizer/runtime data
         ↓
-10. Reassess whether LoRA is actually necessary
+10. Begin one-week behavior log
+        ↓
+11. Emotional depth improvements
+        ↓
+12. Embedding research + retrieval benchmark
+        ↓
+13. Semantic memory implementation, only if benchmark supports it
+        ↓
+14. Choose one platform
+        ↓
+15. Reassess whether LoRA is actually necessary
 ```
+
+## Change Log
+
+- Added Phase 0 repository audit as the active priority before model migration or broad refactoring.
+- Preserved the existing roadmap phases and their acceptance criteria.
+- Clarified that baseline values and the proposed design must be verified against the actual repository before being treated as current facts.
