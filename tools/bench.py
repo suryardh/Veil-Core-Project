@@ -114,8 +114,9 @@ def main():
 
     print("\n### Footprint\n")
     print(f"- Model: `{config.MODEL_PATH}` (quantization: see filename)")
-    print(f"- ctx: {config.N_CTX}, budgets sys/hist/resp: "
-          f"{config.CTX_BUDGET_SYSTEM}/{config.CTX_BUDGET_HISTORY}/{config.CTX_BUDGET_RESPONSE}")
+    print(f"- ctx: {config.N_CTX}, prompt char limit: {config.CTX_PROMPT_CHAR_LIMIT}, "
+          f"history soft budget: {config.CTX_BUDGET_HISTORY}, "
+          f"response reserve: {config.MAX_TOKENS_STREAM} tokens")
     print(f"- Sampling: {config.SAMPLING}, max_tokens: {config.MAX_TOKENS}")
     if ram_before is None or ram_loaded is None:
         print("- Process RAM: unavailable (GetProcessMemoryInfo failed)")
