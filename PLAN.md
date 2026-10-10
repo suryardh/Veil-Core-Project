@@ -5,6 +5,10 @@
 > This document defines **what we prioritize and why**.
 >
 > **Current roadmap status:** Phase 0 — Repository Audit is the active priority. Existing roadmap phases remain preserved, but work that changes models or architecture should wait until the audit exit criteria are met.
+>
+> **Phase 0 status as of 2026-10-11: INCOMPLETE.** Six of the seven Phase 0
+> exit criteria are satisfied. AUDIT-004 (behavioural benchmark) has **not** been
+> executed against the current 7B model. See [Outstanding discrepancies](#outstanding-discrepancies-phase-0).
 
 ---
 
@@ -150,18 +154,57 @@ Review at minimum:
 Phase 0 is complete when:
 
 - [ ] The actual model/runtime configuration is verified.
-- [ ] A current request-lifecycle diagram exists.
+- [x] A current request-lifecycle diagram exists.
 - [ ] Existing tests and a small behavior benchmark have recorded results.
-- [ ] Persistent state and memory have a verified backup/restore path.
-- [ ] Major modules have KEEP / REFACTOR / REPLACE / DEFER dispositions.
-- [ ] Conflicts between code, config, `BASELINE.md`, `AGENT.md`, and other docs are recorded.
+- [x] Persistent state and memory have a verified backup/restore path.
+- [x] Major modules have KEEP / REFACTOR / REPLACE / DEFER dispositions.
+- [x] Conflicts between code, config, `BASELINE.md`, `AGENT.md`, and other docs are recorded.
 - [ ] The next implementation step is supported by evidence and has a rollback path.
 
 **Until these criteria are met, do not start a model migration or broad architecture rewrite.** Small, non-destructive fixes needed to run the audit are allowed and should be documented.
 
+### Exit criteria status (verified 2026-10-11)
+
+| # | Criterion | State | Evidence |
+|---|---|---|---|
+| 1 | Model/runtime configuration verified | **MET** | measured at runtime: 7B, `N_CTX=4096`, `CTX_PROMPT_CHAR_LIMIT=14528`, effective temp **0.7** (see D-2) |
+| 2 | Request-lifecycle diagram | **MET** | `README.md` Architecture section; traced through `personality/core.py` → `core/agent.py` → `llm/engine.py` |
+| 3 | Tests + behavior benchmark recorded | **NOT MET** | 138 deterministic assertions pass; **`tools/bench.py` never executed** on the current 7B model (AUDIT-004) |
+| 4 | Backup/restore path verified | **MET** | checksummed envelope, tamper + future-schema rejection, v2→v3 migration — covered by the suite |
+| 5 | Module dispositions | **MET** | `README.md` structure + `AGENT.md` §Discrepancies |
+| 6 | Conflicts recorded | **MET** | this section |
+| 7 | Next step evidence-backed + rollback | **PARTIAL** | the next step is gated on the model copy, which is not yet authorized |
+
+### Outstanding discrepancies (Phase 0)
+
+| ID | Finding | Severity | Owning phase |
+|---|---|---|---|
+| D-1 | `core/bootstrap.py` error text says "Download Qwen2.5-**3B**" while the configured path is the **7B** model | Low | Phase 0 |
+| D-2 | `.env` (gitignored) sets `VEIL_TEMP=0.7`, making the tuned `0.6` default unreachable. Effective runtime temperature is **0.7**. Decide the intended value before recording a behavioural baseline | Medium | Phase 1 |
+| D-3 | `BASELINE.md` "Model & Runtime Config" describes the 3B/CPU reference, not current config | Medium | Phase 0 |
+| D-4 | `core/agent.py` omits a 1-char separator from context accounting; assembled prompt can reach `limit + 1` | Low | Phase 2 |
+| D-5 | Context-guard tests use a ~215-char system marker, so the binding branch is never exercised; add a boundary test at realistic system size | Low | Phase 2 |
+| D-6 | `AGENT.md` prohibits a PersonalityCore god object; `personality/core.py` owns emotion, conflict, inactivity, memory, tools, prompting and persistence | Medium | Phase 4 / 5 |
+| D-7 | `AGENT.md`/`DESIGN.md` require YAML-driven characters; Stella is hardcoded in `personality/stella.py` and imported by the core | Medium | Phase 6 |
+| D-8 | `PLAN.md` "~2,100 tokens" context estimate is unverified (tokenizer not re-measured) | Info | Phase 2 |
+| D-9 | `tools/bench.py:118` referenced removed `CTX_BUDGET_SYSTEM` / `CTX_BUDGET_RESPONSE` | **Fixed** in `b53eafc` | Phase 0 |
+| D-10 | `config.py` `float(os.getenv("VEIL_TEMP", ...))` raises `ValueError` if the variable is set but empty | Low | Phase 0 |
+
+**None of these are fixed except D-9.** The architectural requirements in
+`AGENT.md` and `DESIGN.md` stand as written; D-6 and D-7 are recorded gaps
+between requirement and implementation, not licence to weaken the requirement.
+
 ---
 
 # Phase 1 — Model Migration
+
+> **Note (2026-10-11): the migration described below was already performed on
+> 2026-08-26** — the 3B → 7B switch, GPU wheel installation and one-week
+> qualitative evaluation are recorded in `BASELINE.md` §Post-migration. The
+> 3B model is retained as a rollback file. What remains open is
+> **revalidation**: those results were captured against an earlier checkout and
+> have not been re-verified since. Phase 0 is the gate; do not re-run the
+> migration, re-verify the recorded baseline.
 
 ## Qwen 7B Evaluation
 
@@ -170,6 +213,8 @@ Move from the current 3B model to a suitable Qwen 7B GGUF candidate, initially t
 The exact model variant must be selected through evaluation rather than assuming that every Qwen 7B variant behaves identically.
 
 **Dependency:** Begin only after Phase 0 verifies the actual current model/configuration, establishes a usable baseline, and confirms a safe rollback path.
+
+**Status: migration done; revalidation blocked on AUDIT-004.** The acceptance criteria below that depend on measured behaviour (one week of use, recorded concrete failures) were met for the 2026-08-26 run and must be re-confirmed before Phase 1 can be considered revalidated. Resolve D-2 (temperature) before capturing that baseline.
 
 ### Why first?
 
@@ -828,6 +873,16 @@ Do not skip ahead. The first goal is to establish the actual repository state wi
 
 ## Change Log
 
+- **2026-10-11 — docs:** reconciled roadmap with verified implementation. Recorded that the
+  7B migration already happened (2026-08-26) and that Phase 1 now needs *revalidation*, not
+  migration. Logged the Phase 0 discrepancy register (D-1…D-10) with owning phases.
+- **2026-10-11 — fix (`b53eafc`):** `tools/bench.py` reported `config.CTX_BUDGET_SYSTEM` and
+  `config.CTX_BUDGET_RESPONSE`, both removed in `3da72f9` when the three soft budgets were
+  consolidated into `CTX_PROMPT_CHAR_LIMIT`. The line raised `AttributeError` *after* the full
+  13-prompt benchmark, discarding a paid inference run. Now reports the current budget model.
+  The obsolete sys/hist/resp framing was removed rather than mapped, because the three-way
+  split no longer exists: there is no system cap (the system block is never truncated) and no
+  character response reserve (folded in as `MAX_TOKENS_STREAM` tokens).
 - Added Phase 0 repository audit as the active priority before model migration or broad refactoring.
 - Preserved the existing roadmap phases and their acceptance criteria.
 - Clarified that baseline values and the proposed design must be verified against the actual repository before being treated as current facts.

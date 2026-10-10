@@ -1,5 +1,17 @@
 # Baseline — Qwen2.5-3B-Instruct Q4_K_M (pre-migration reference)
 
+> **READ FIRST.** This file contains two kinds of statement:
+>
+> 1. **Historical measurements** — captured 2026-08-23 (3B) and 2026-08-26 (7B).
+>    They are a record of what was observed then. They are **not** re-verified
+>    against the current checkout.
+> 2. **Current configuration** — verified 2026-10-11 by reading `config.py`
+>    and the live runtime.
+>
+> **The 7B benchmark has not been re-run.** All 7B latency, VRAM, throughput and
+> behavioural figures below are historical. AUDIT-004 is incomplete; see
+> `PLAN.md` §Outstanding discrepancies.
+>
 > Captured 2026-08-23 per TODO BASE-001. Reference point the Qwen 7B candidate
 > (MODEL-002..004) must be compared against. Reproduce with:
 >
@@ -8,6 +20,41 @@
 > python tools/bench.py                                                    # fixed 13-prompt set
 > python tools/state_backup.py restore data/backups/<latest>.json --apply  # undo bench writes
 > ```
+
+## Current configuration (verified 2026-10-11)
+
+| Item | Value |
+|------|-------|
+| Active model | `models/qwen2.5-7b-instruct-abliterated-v2-q4_k_m.gguf` (`config.py:12`) |
+| Rollback model | `models/qwen2.5-3b-instruct-q4_k_m.gguf` (retained on disk) |
+| Context | `N_CTX = 4096` |
+| Context budget | `CTX_PROMPT_CHAR_LIMIT = 14528` chars (hard total guard); `CTX_BUDGET_HISTORY = 2500` (soft) |
+| Max tokens | 300 (generate), 400 (stream) |
+| Threads | `cpu_count // 2` (= 6 on a 12-logical-CPU host) |
+| Compute | GPU when the CUDA wheel is installed — `USE_GPU` default true → `n_gpu_layers = -1` (full offload) |
+
+### Effective sampling temperature
+
+`config.py` defaults `VEIL_TEMP` to **`0.6`**, chosen on 2026-08-26 because a
+live-sim at 0.7 produced word salad (MODEL-005).
+
+**A local `.env` currently sets `VEIL_TEMP=0.7`.** `.env` is gitignored, so the
+`0.6` default is unreachable on a machine carrying that file and the **effective
+runtime temperature is 0.7**. Verified 2026-10-11:
+
+```
+OS environment before config import .... VEIL_TEMP NOT SET
+config.py load_dotenv() ............... reads <cwd>/.env -> VEIL_TEMP = "0.7"
+os.getenv("VEIL_TEMP", "0.6") ......... returns "0.7"   (default unreachable)
+config.SAMPLING["temperature"] ........ 0.7
+```
+
+Any behavioural baseline recorded now documents 0.7. Resolve before capturing one.
+
+## Historical: 3B model & runtime config (captured 2026-08-23)
+
+The table below describes the **pre-migration 3B reference**, not the current
+configuration. It is retained as the comparison point for MODEL-002..004.
 
 ## Model & Runtime Config
 
@@ -93,10 +140,24 @@ not tokens). Docs have been synced to the real config values.
 
 # Post-migration results — Qwen2.5-7B-Instruct-abliterated-v2
 
+> **HISTORICAL — captured 2026-08-26, NOT re-verified.** These figures were
+> measured against an earlier checkout. They have not been reproduced since.
+> AUDIT-004 remains open precisely because no current baseline exists.
+> Do not cite these as current measurements.
+
 Captured 2026-08-26 after MODEL-003 (same bench, same pipeline, state backed up
-and restored around the run). Active model:
+and restored around the run). Active model at the time:
 `qwen2.5-7b-instruct-abliterated-v2-q4_k_m.gguf`
 (mradermacher i1-Q4_K_M, 4.68 GB, SHA-verified). Rollback file (3B) kept.
+
+### What re-running the benchmark still requires
+
+- `tools/bench.py` was repaired in `b53eafc` (it referenced two config constants
+  removed in `3da72f9` and would have raised `AttributeError` after the run).
+- A model-backed run still has not happened. Its latency, VRAM and RAM figures,
+  and its 13 behavioural outputs, are all **unmeasured for the current checkout**.
+- `tools/ctx_report.py` likewise needs the GGUF to obtain real token counts, so the
+  ~4.1 chars/token ratio and the token-side context estimate remain unverified.
 
 ### Setup changes that made this possible
 

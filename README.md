@@ -11,6 +11,22 @@ beyond an agent with personality
 
 ---
 
+# Project Status
+
+> **Current phase: Phase 0 — Repository Audit (active).** The roadmap phases
+> below are preserved but unverified; see `PLAN.md` for exit criteria and
+> `BASELINE.md` for what is measured vs. historical.
+>
+> **AUDIT-004 is NOT complete.** The fixed-prompt benchmark (`tools/bench.py`)
+> has not been executed against the current 7B model. All 7B latency, VRAM,
+> throughput and behavioural numbers in this repository are **historical
+> (captured 2026-08-26) and not re-validated**.
+>
+> Implemented ≠ verified. The deterministic test suite passes 138 assertions;
+> the 3 LLM-dependent end-to-end assertions have not been run in the audit.
+
+---
+
 # Features
 
 ## Emotional Core
@@ -128,7 +144,7 @@ Veil/
 ├── app.py                      ← CLI entry point
 ├── app_tui.py                  ← TUI entry point (rich, split-panel)
 ├── config.py                   ← all tunables + .env
-├── test_agent.py               ← 133 assertions
+├── test_agent.py               ← 138 deterministic assertions + 3 LLM-dependent
 │
 ├── core/
 │   ├── bootstrap.py            ← App startup consolidation
@@ -150,11 +166,13 @@ Veil/
 │   └── store.py                ← atomic persistence
 │
 ├── personality/
-│   ├── core.py                 ← thin coordinator (analyze → decide → respond)
+│   ├── core.py                 ← coordinator: analyze → state → memory → tools → prompt → generate
+│   │                             (owns emotion, conflict, inactivity, memory, tool routing,
+│   │                              prompting and state persistence — see AGENT.md §Discrepancies)
 │   ├── state.py                ← StellaIdentity + StellaState (5-dim, decay)
 │   ├── analyzer.py             ← keyword → EmotionAnalysis
 │   ├── prompting.py            ← state → natural language descriptor
-│   ├── stella.py               ← identity constants (base, rules, safety)
+│   ├── stella.py               ← identity constants (base, rules, safety) — hardcoded, see AGENT.md
 │   ├── rules.py                ← centralized personality rules (v3.1)
 │   ├── conflict.py             ← insult detection, cooling, recovery, drift
 │   ├── persistence.py          ← save/load state.json (schema v3)
@@ -165,7 +183,7 @@ Veil/
 ├── tools/
 │   ├── base.py                 ← BaseTool + ToolResult + ToolContext
 │   ├── state_backup.py         ← manual backup/restore data/state.json
-│   ├── bench.py                ← fixed-prompt benchmark (baseline comparison)
+│   ├── bench.py                ← fixed-prompt benchmark (baseline comparison) — requires the GGUF
 │   ├── ctx_report.py           ← context budget measurement (tokenizer-based)
 │   ├── daily_eval.py           ← scheduled 7-day eval (probes + sim + metrics)
 │   ├── sim_live.py             ← manual opponent banter (OpenAI-compatible)
@@ -220,7 +238,13 @@ For RTX 4050 / CUDA-equipped GPUs — install the CUDA-enabled llama-cpp-python 
 pip install llama-cpp-python==0.3.25 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu125
 ```
 Pick the `cuXXX` suffix matching your driver's max CUDA runtime (see
-`nvidia-smi` header). Then ensure `VEIL_USE_GPU=1` (default in `.env` or environment).
+`nvidia-smi` header). Then ensure `VEIL_USE_GPU=1` — the default comes from
+`config.py` (`USE_GPU`), not from `.env`.
+
+If a bare `import llama_cpp` fails with *"Could not find module ... llama.dll"*,
+that is the CUDA wheel's DLL dependency chain, not a missing model. It is normal
+only if you never import `llm.engine`, which calls `_setup_cuda_paths()` first
+to register the CUDA bin directories.
 
 ---
 
@@ -255,7 +279,7 @@ personality/core.py PersonalityCore.handle(user_input)
       builds raw ChatML (<|im_start|>system/user/assistant<|im_end|>)
       truncates history/prompt via _truncate() + CTX_PROMPT_CHAR_LIMIT
   → llm/engine.py LLMEngine.generate(prompt)
-      llama_cpp.Llama(...) call with SAMPLING params (temp 0.6, top_p 0.9)
+      llama_cpp.Llama(...) call with SAMPLING params (see "Temperature" below)
 
 Persistence around it:
   state: personality/persistence.py ↔ data/state.json (schema v3)
@@ -265,8 +289,14 @@ Persistence around it:
 
 ### Runtime notes
 
-- Sampling tuned 2026-08-26 after live-sim showed word salad at temp 0.7 (MODEL-005).
-- ChatML `<|im_start|>/<|im_end|>` matches Qwen2 template — any Qwen2-family GGUF is drop-in; other families need prompt-format changes.
+- **Temperature — configured default vs effective value (verified 2026-10-11).**
+  `config.py` defaults `VEIL_TEMP` to `0.6`, chosen on 2026-08-26 after a live-sim
+  showed word salad at 0.7 (MODEL-005). However a local `.env` currently sets
+  `VEIL_TEMP=0.7`, and `.env` is gitignored — so on a machine carrying that file
+  the **effective runtime temperature is 0.7, not the tuned 0.6**. The `0.6`
+  default is unreachable there. Confirm which is in effect before recording any
+  behavioural baseline.
+- ChatML `/` matches Qwen2 template — any Qwen2-family GGUF is drop-in; other families need prompt-format changes.
 - Context budget is enforced in **characters** (~4.0–4.1 chars/token for Indonesian), measured by `tools/ctx_report.py` — the assembled prompt stays under `CTX_PROMPT_CHAR_LIMIT` so prompt + streaming response fit `N_CTX` with headroom.
 - N_CTX=4096 vs the model's larger trained context — headroom chosen for CPU/GPU speed on limited VRAM.
 
@@ -276,7 +306,8 @@ Persistence around it:
 
 Main config in `config.py`:
 - CPU thread allocation
-- Sampling parameters (temp 0.6, top_p 0.9, min_p 0.05, repeat_penalty 1.15)
+- Sampling parameters (default temp 0.6 — **see "Temperature" in Runtime notes**;
+  top_p 0.9, min_p 0.05, repeat_penalty 1.15)
 - Context size (4096)
 - Context guard (`CTX_PROMPT_CHAR_LIMIT` ≈ 14.5k chars, history soft budget 2.5k)
 - Max tokens: 300 (normal), 400 (stream)
@@ -286,8 +317,8 @@ Main config in `config.py`:
 
 Environment overrides:
 ```bash
-USE_GPU=1              # GPU mode (default) | 0 = CPU-only
-VEIL_TEMP=0.6
+USE_GPU=1              # GPU mode (default from config.py, not .env) | 0 = CPU-only
+VEIL_TEMP=0.6          # .env wins over the code default when present
 TAVILY_API_KEY=tvly-...
 SIM_API_KEY=...        # OpenAI-compatible key for the eval sim opponent
 SIM_BASE_URL=...       # e.g. https://api.groq.com/openai/v1
@@ -349,16 +380,23 @@ automatically.
 python test_agent.py
 ```
 
-133 tests (passing), split:
+**Verified 2026-10-11: 138 deterministic assertions pass, 0 fail.** The suite is
+self-contained — no network and no GGUF required for the deterministic portion.
 
-- tool system — calculator + datetime (10)
-- long-term memory + fact extraction (9)
-- short-term memory overflow (4)
-- emotional analysis + state + emotional memory (19)
-- state backup/restore (10)
-- context budget guard (10)
-- conflict/cooldown/recovery + sanitizer + evaluator + constraints/TTL (65)
-- LLM-dependent e2e — chat, calculator-via-orch, stream (3)
+- tool system — calculator + datetime
+- long-term memory + fact extraction
+- short-term memory overflow
+- emotional analysis + state + emotional memory
+- state backup/restore (checksum, tamper rejection, schema-version guard, v2→v3 migration)
+- context budget guard
+- conflict/cooldown/recovery + sanitizer + evaluator + constraints/TTL
+
+The 3 **LLM-dependent end-to-end assertions** (chat, calculator-via-orchestrator,
+streaming) require the GGUF and were **not run** during the Phase 0 audit; they
+are reported separately rather than counted as passing.
+
+`tools/bench.py` (13 fixed prompts, baseline comparison) also requires the GGUF
+and has **not** been executed against the current 7B model — see `BASELINE.md`.
 
 ---
 

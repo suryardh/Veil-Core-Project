@@ -15,6 +15,27 @@ The runtime should prioritize character consistency and reliability over model c
 
 This document describes the target design. It does not claim that the current implementation already follows these boundaries. The repository audit must verify the existing code before refactoring decisions are finalized.
 
+### Audit findings against this design (recorded 2026-10-11)
+
+Phase 0 inspection found two boundaries above that the implementation does not
+yet meet. Both are recorded as gaps; **this document's requirements stand** and
+have not been amended to match the code.
+
+- **§2.2 / §4.2 — character identity is not yet data.** The proposed
+  `characters/stella/{character,personality,lore,rules}.yaml` structure does not
+  exist. Stella's identity is hardcoded in `personality/stella.py` and imported
+  by the runtime core. Loading a second character currently requires editing
+  runtime source, which §4.2 explicitly forbids. *(D-7, Phase 6)*
+- **§3 / §4 — `PersonalityCore` is currently a god object.** It owns emotion
+  analysis, conflict handling, inactivity, memory, tool routing, prompt
+  assembly and state persistence. This conflicts with the subsystem separation
+  drawn in §3 and with `AGENT.md`. §3 already permits a logical rather than
+  physical split ("Start with explicit interfaces and tests"), so the intended
+  path is incremental extraction, not a rewrite. *(D-6, Phase 4/5)*
+
+Additionally, §9's local-deployment assumptions depend on measurements that have
+not been re-taken since 2026-08-26; see `BASELINE.md` and `PLAN.md`.
+
 2. Design Principles
 
 1. Character logic stays in the core. Platforms and presentation layers must not own persona logic.
