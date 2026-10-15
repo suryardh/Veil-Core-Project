@@ -8,9 +8,12 @@
 > 2. **Current configuration** — verified 2026-10-11 by reading `config.py`
 >    and the live runtime.
 >
-> **The 7B benchmark has not been re-run.** All 7B latency, VRAM, throughput and
-> behavioural figures below are historical. AUDIT-004 is incomplete; see
-> `PLAN.md` §Outstanding discrepancies.
+> **A post-C1 7B benchmark was executed on 2026-10-15** — 13/13 prompts,
+> process exit code 0. See
+> [Post-C1 benchmark evidence](#post-c1-benchmark-evidence) below. The 7B
+> latency, VRAM, throughput and behavioural figures in the **historical** sections
+> below were captured 2026-08-26 and remain historical; they were not
+> re-verified. AUDIT-004 is still incomplete; see `PLAN.md` §Discrepancy register.
 >
 > Captured 2026-08-23 per TODO BASE-001. Reference point the Qwen 7B candidate
 > (MODEL-002..004) must be compared against. Reproduce with:
@@ -141,23 +144,25 @@ not tokens). Docs have been synced to the real config values.
 # Post-migration results — Qwen2.5-7B-Instruct-abliterated-v2
 
 > **HISTORICAL — captured 2026-08-26, NOT re-verified.** These figures were
-> measured against an earlier checkout. They have not been reproduced since.
-> AUDIT-004 remains open precisely because no current baseline exists.
-> Do not cite these as current measurements.
+> measured against an earlier checkout and have not been reproduced since; do
+> not cite them as current measurements. A current-checkout run now exists — see
+> [Post-C1 benchmark evidence](#post-c1-benchmark-evidence) — but AUDIT-004
+> remains open for the reasons recorded in `PLAN.md`.
 
 Captured 2026-08-26 after MODEL-003 (same bench, same pipeline, state backed up
 and restored around the run). Active model at the time:
 `qwen2.5-7b-instruct-abliterated-v2-q4_k_m.gguf`
 (mradermacher i1-Q4_K_M, 4.68 GB, SHA-verified). Rollback file (3B) kept.
 
-### What re-running the benchmark still requires
+### What re-running the benchmark required
 
 - `tools/bench.py` was repaired in `b53eafc` (it referenced two config constants
   removed in `3da72f9` and would have raised `AttributeError` after the run).
-- A model-backed run still has not happened. Its latency, VRAM and RAM figures,
-  and its 13 behavioural outputs, are all **unmeasured for the current checkout**.
-- `tools/ctx_report.py` likewise needs the GGUF to obtain real token counts, so the
-  ~4.1 chars/token ratio and the token-side context estimate remain unverified.
+- Satisfied 2026-10-15 — see [Post-C1 benchmark evidence](#post-c1-benchmark-evidence).
+  One model-backed run completed on the current checkout.
+- **Still outstanding:** `tools/ctx_report.py` needs the GGUF to obtain real
+  token counts, so the ~4.1 chars/token ratio and the token-side context estimate
+  remain unverified (D-8).
 
 ### Setup changes that made this possible
 
@@ -201,3 +206,72 @@ that prompt class.
 New observation: model sometimes produces creative-but-garbled Indonesian
 phrases under high affection context ("ngegenggam perluasan yang udah
 ngambur-ngamburin") — log during MODEL-005 week as speech-style category.
+
+---
+
+# Post-C1 benchmark evidence
+
+Captured **2026-10-15** on the current checkout. Full report:
+`%TEMP%\veil-audit\POST_C1_BENCHMARK_REPORT.md`.
+
+This is the first behavioural baseline measured against the current tree with the
+canned-reaction path disabled. It supersedes neither the 3B nor the 2026-08-26 7B
+numbers — it is a separate, third data point.
+
+| Item | Value |
+|---|---|
+| Runs | exactly one |
+| **Process exit code** | **0** (measured) |
+| Prompts completed | **13 / 13** |
+| Wall clock | 105.4 s |
+| Avg / Min / Max latency | 7.00 s / 3.95 s / 20.70 s |
+| Warmup | 8.1 s, excluded from stats |
+| Effective temperature | **0.7** — child process environment only |
+| Compute | CPU-only (`n_gpu_layers = 0`), Tavily disabled |
+| Errors | no tracebacks; one benign `n_ctx_seq (4096) < n_ctx_train (32768)` notice |
+
+## Two defects confirmed fixed in the live pipeline
+
+- **Canned reactions.** The Phase B run answered prompt 5 with `hmm iya juga`
+  in **0.02 s** — a `REACTION_TEMPLATES["pensive"]` string, never an inference.
+  This run produces a genuine **7.08 s** generation for the same prompt; minimum
+  latency moved 0.02 s → 3.95 s.
+- **Memory extraction.** `memory/long_term.json` finished **byte-identical to
+  its empty seed** (`{"facts": []}`, 21 B). The Phase B run had grown it to
+  246 B holding the corrupted fact `"Ga kemarin kita bahas apa?"`.
+
+Production was untouched: 7 protected files byte-identical, and the detection-only
+filesystem monitor recorded **zero** file changes across the run.
+
+## Latency is monitor-contaminated — do not compare directly
+
+The filesystem monitor scanned ~3,843 files every second *during* the run and
+competed for CPU. **7.00 s is not an uncontaminated model latency figure.** It must
+not be compared against the 3B 5.88 s / 7B 6.87 s figures in the tables above, nor
+against the Phase B average of 4.59 s (which was measured with no monitor
+running). A clean latency comparison requires a rerun without monitoring.
+
+## Other limitations
+
+- **One run, one seed.** No variance and no repeat sampling; temperature 0.7 is
+  nondeterministic.
+- **Positive long-term recall remains untested.** Prompt 8 recalled from
+  *emotional* memory, which was seeded with 8 historical records. The long-term
+  store was empty and correctly stayed empty, so the positive recall path was
+  never exercised in the benchmark itself.
+- **VRAM (915 MB) and model footprint (~433 MB) are measurement artifacts** — a
+  4.68 GB GGUF cannot occupy 433 MB of RSS. Do not cite them.
+- **D-8 still blocked** — `tools/ctx_report.py` loads the GGUF, so the token-side
+  context estimate stays unverified.
+- **Temperature 0.7 is unratified** (D-2). Per `PLAN.md` §Phase 1, resolve D-2
+  before treating this as an authoritative behavioural baseline.
+
+## Known behaviours reproduced (pre-existing, not regressions)
+
+| Prompt | Behaviour | Tracking |
+|---|---|---|
+| #9 `kamu sebenarnya AI kan?` | admits being an AI | identity rule conflict — persona-identity diagnostics |
+| #13 `berapa 12*7?` | correct answer `84` plus an unsolicited "sayang!" | persona leakage — persona-leak diagnostics |
+
+Their reproduction here confirms the baseline is **stable and repeatable**, not
+that new failures were introduced.

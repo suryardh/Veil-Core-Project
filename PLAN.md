@@ -6,9 +6,15 @@
 >
 > **Current roadmap status:** Phase 0 — Repository Audit is the active priority. Existing roadmap phases remain preserved, but work that changes models or architecture should wait until the audit exit criteria are met.
 >
-> **Phase 0 status as of 2026-10-11: INCOMPLETE.** Six of the seven Phase 0
-> exit criteria are satisfied. AUDIT-004 (behavioural benchmark) has **not** been
-> executed against the current 7B model. See [Outstanding discrepancies](#outstanding-discrepancies-phase-0).
+> **Phase 0 status as of 2026-10-15: INCOMPLETE.** Of the seven Phase 0 exit
+> criteria, five are **met**, one is **partial** (#7), and one is **not met**
+> (#3, AUDIT-004). A post-C1 behavioural benchmark has now been **executed
+> successfully** — 13/13 prompts, process exit code 0, 105.4 s, `VEIL_TEMP=0.7`,
+> CPU-only — but **AUDIT-004 remains not met**: the benchmark has no
+> long-conversation coverage, no documented expected behaviour per prompt, and
+> positive long-term-memory recall is still untested. Phase 0 is **not** closed.
+> See [Discrepancy register](#discrepancy-register-phase-0) and
+> [Post-C1 benchmark evidence](#post-c1-benchmark-evidence).
 
 ---
 
@@ -169,30 +175,116 @@ Phase 0 is complete when:
 |---|---|---|---|
 | 1 | Model/runtime configuration verified | **MET** | measured at runtime: 7B, `N_CTX=4096`, `CTX_PROMPT_CHAR_LIMIT=14528`, effective temp **0.7** (see D-2) |
 | 2 | Request-lifecycle diagram | **MET** | `README.md` Architecture section; traced through `personality/core.py` → `core/agent.py` → `llm/engine.py` |
-| 3 | Tests + behavior benchmark recorded | **NOT MET** | 138 deterministic assertions pass; **`tools/bench.py` never executed** on the current 7B model (AUDIT-004) |
+| 3 | Tests + behavior benchmark recorded | **NOT MET** | 141 deterministic assertions pass in the isolated verification run; `tools/bench.py` **has now been executed** on the current 7B model — post-C1 run 2026-10-15, 13/13 prompts, exit code 0 (see [Post-C1 benchmark evidence](#post-c1-benchmark-evidence)). AUDIT-004 still unmet: no long-conversation coverage, no per-prompt expected behaviour, positive long-term recall untested |
 | 4 | Backup/restore path verified | **MET** | checksummed envelope, tamper + future-schema rejection, v2→v3 migration — covered by the suite |
 | 5 | Module dispositions | **MET** | `README.md` structure + `AGENT.md` §Discrepancies |
 | 6 | Conflicts recorded | **MET** | this section |
 | 7 | Next step evidence-backed + rollback | **PARTIAL** | the next step is gated on the model copy, which is not yet authorized |
 
-### Outstanding discrepancies (Phase 0)
+### Discrepancy register (Phase 0)
 
-| ID | Finding | Severity | Owning phase |
-|---|---|---|---|
-| D-1 | `core/bootstrap.py` error text says "Download Qwen2.5-**3B**" while the configured path is the **7B** model | Low | Phase 0 |
-| D-2 | `.env` (gitignored) sets `VEIL_TEMP=0.7`, making the tuned `0.6` default unreachable. Effective runtime temperature is **0.7**. Decide the intended value before recording a behavioural baseline | Medium | Phase 1 |
-| D-3 | `BASELINE.md` "Model & Runtime Config" describes the 3B/CPU reference, not current config | Medium | Phase 0 |
-| D-4 | `core/agent.py` omits a 1-char separator from context accounting; assembled prompt can reach `limit + 1` | Low | Phase 2 |
-| D-5 | Context-guard tests use a ~215-char system marker, so the binding branch is never exercised; add a boundary test at realistic system size | Low | Phase 2 |
-| D-6 | `AGENT.md` prohibits a PersonalityCore god object; `personality/core.py` owns emotion, conflict, inactivity, memory, tools, prompting and persistence | Medium | Phase 4 / 5 |
-| D-7 | `AGENT.md`/`DESIGN.md` require YAML-driven characters; Stella is hardcoded in `personality/stella.py` and imported by the core | Medium | Phase 6 |
-| D-8 | `PLAN.md` "~2,100 tokens" context estimate is unverified (tokenizer not re-measured) | Info | Phase 2 |
-| D-9 | `tools/bench.py:118` referenced removed `CTX_BUDGET_SYSTEM` / `CTX_BUDGET_RESPONSE` | **Fixed** in `b53eafc` | Phase 0 |
-| D-10 | `config.py` `float(os.getenv("VEIL_TEMP", ...))` raises `ValueError` if the variable is set but empty | Low | Phase 0 |
+| ID | Finding | Severity | Status | Owning phase |
+|---|---|---|---|---|
+| D-1 | `core/bootstrap.py` error text said "Download Qwen2.5-**3B**" while the configured path is the **7B** model | Low | **Fixed in working tree, uncommitted** — message now derives the filename from `config.MODEL_PATH`; not present in `e827a8e` | Phase 0 |
+| D-2 | `.env` (gitignored) sets `VEIL_TEMP=0.7`, making the tuned `0.6` default unreachable. Effective runtime temperature is **0.7**. Decide the intended value before recording a behavioural baseline | Medium | **Open — needs a decision.** Precedence verified: OS env > `.env` > code default | Phase 1 |
+| D-3 | `BASELINE.md` "Model & Runtime Config" described the 3B/CPU reference, not current config | Medium | **Fixed** in `e827a8e` | Phase 0 |
+| D-4 | `core/agent.py` omitted a 1-char separator from context accounting; assembled prompt could reach `limit + 1` | Low | **Fixed in working tree, uncommitted** — worst case now exactly `limit` (14528); not present in `e827a8e` | Phase 2 |
+| D-5 | Context-guard tests used a 216-char system marker, so the binding branch was never exercised | Low | **Fixed in working tree, uncommitted** — 3 boundary assertions added to `test_agent.py` at realistic system size; not present in `e827a8e` | Phase 2 |
+| D-6 | `AGENT.md` prohibits a PersonalityCore god object; `personality/core.py` owns emotion, conflict, inactivity, memory, tools, prompting and persistence | Medium | **Open — documented gap** | Phase 4 / 5 |
+| D-7 | `AGENT.md`/`DESIGN.md` require YAML-driven characters; Stella is hardcoded in `personality/stella.py` and imported by the core | Medium | **Open — documented gap** | Phase 6 |
+| D-8 | `PLAN.md` "~2,100 tokens" context estimate is unverified | Info | **Open — evidence-limited.** Post-D-4 measured char worst case is 14528 (14529 before the fix); the ratio and the token figure both need `tools/ctx_report.py` | Phase 2 |
+| D-9 | `tools/bench.py:118` referenced removed `CTX_BUDGET_SYSTEM` / `CTX_BUDGET_RESPONSE` | Medium | **Fixed** in `b53eafc` | Phase 0 |
+| D-10 | `config.py` `float(os.getenv("VEIL_TEMP", ...))` raises `ValueError` if the variable is set but empty | Low | **Open — not fixed**; `config.py` is out of audit scope | Phase 0 |
+| D-11 | `README.md` claimed "138 deterministic assertions" in two places while the suite runs **141** (138 + the 3 boundary assertions added for D-5) | Low | **Resolved 2026-10-15** — count corrected to 141 in `README.md` | Phase 0 |
+| D-12 | `memory/extractor.py` requires a `ya`/`bahwa`/`kalau` particle before seeding a fact, so a **bare imperative** such as `ingat ulang tahun aku bulan depan` is no longer saved | Low | **Open — product decision needed.** Deliberate narrowing: the bare form previously seeded, and a recall question (`inget ga ...`) was wrongly saved as a fact. No test covers the bare form either way; `AGENT.md` defines no save marker | Phase 5 |
+| D-13 | `LongTermMemory.get_relevant_facts()` returns `scored[:10]` with **no relevance floor**, so facts scoring zero against the query are still injected into the prompt | Medium | **Open.** Verified 2026-10-15: an unrelated query still returned a stored fact. Injection precision degrades as the store grows | Phase 5 |
 
-**None of these are fixed except D-9.** The architectural requirements in
-`AGENT.md` and `DESIGN.md` stand as written; D-6 and D-7 are recorded gaps
-between requirement and implementation, not licence to weaken the requirement.
+**Merged: D-3 (`e827a8e`), D-9 (`b53eafc`). Fixed but uncommitted in the working
+tree: D-1, D-4, D-5. Resolved in this documentation pass: D-11. Open: D-2, D-6,
+D-7, D-8, D-10, D-12, D-13.**
+D-1/D-4/D-5 are present only in the current working tree; they are **not** in the
+`prototypev1` HEAD commit `e827a8e`.
+The architectural requirements in `AGENT.md` and `DESIGN.md` stand as written;
+D-6 and D-7 are recorded gaps between requirement and implementation, not licence
+to weaken the requirement. D-2 and D-10 are left open deliberately: both would
+require editing runtime configuration, which this audit must not do to make
+documentation look consistent.
+
+## Post-C1 benchmark evidence
+
+Captured 2026-10-15 against the current checkout. Raw report:
+`%TEMP%\veil-audit\POST_C1_BENCHMARK_REPORT.md`.
+
+| Item | Value |
+|---|---|
+| Runs executed | exactly one |
+| Process exit code | **0** (measured, not inferred) |
+| Prompts completed | **13 / 13** |
+| Wall clock | 105.4 s |
+| Avg / Min / Max latency | 7.00 s / 3.95 s / 20.70 s |
+| Warmup | 8.1 s, excluded from stats by design |
+| Effective temperature | **0.7**, set in the child process environment only |
+| Compute | CPU-only (`n_gpu_layers = 0`); Tavily disabled |
+| Tracebacks | none; one benign `n_ctx_seq (4096) < n_ctx_train (32768)` notice |
+
+### What this run proves
+
+- **The canned-reaction defect is gone from the measured path.** The Phase B
+  run returned `hmm iya juga` for prompt 5 in **0.02 s** — a
+  `REACTION_TEMPLATES["pensive"]` string, never an inference. This run returns a
+  real **7.08 s** generation for the same prompt, and the minimum latency moved
+  from 0.02 s to 3.95 s.
+- **The memory-extraction defect is gone in the live pipeline.**
+  `memory/long_term.json` finished byte-identical to its empty seed. In the
+  Phase B run it had grown to 246 B holding the corrupted fact
+  `"Ga kemarin kita bahas apa?"`.
+- Production was untouched: 7 protected files byte-identical, `protected
+  differences : 0`, and the detection-only filesystem monitor recorded **zero**
+  file changes across the whole run.
+
+### What this run does **not** prove
+
+1. **Latency is monitor-contaminated.** The filesystem monitor scanned ~3,843
+   files every second *during* the run, competing for CPU. **7.00 s must not be
+   presented as uncontaminated model latency**, nor compared directly against the
+   Phase B average of 4.59 s, which was measured without a monitor.
+2. **One run, one seed.** No variance, no repeat sampling. Temperature 0.7 is
+   nondeterministic.
+3. **Positive long-term recall is still untested.** Prompt 8 recalled from
+   *emotional* memory (seeded with 8 historical records); the long-term store was
+   empty and correctly stayed empty.
+4. **AUDIT-004 gaps remain** — no long-conversation category, and no documented
+   expected behaviour per prompt.
+5. **VRAM (915 MB) and model footprint (~433 MB) figures are artifacts** and must
+   not be cited as measurements.
+6. **D-8 stays blocked** — `tools/ctx_report.py:33` constructs
+   `LLMEngine(config.MODEL_PATH)`, so the token-side context estimate still
+   requires a GGUF load.
+7. **Known baseline behaviours reproduced:** prompt 9 admits being an AI, and
+   prompt 13 appends an unsolicited "sayang!". Both are pre-existing findings
+   (persona identity and persona-leak diagnostics), **not** new regressions.
+
+## Remaining Phase 0 work
+
+Phase 0 cannot close until these are done. Ordered by dependency:
+
+1. **AUDIT-004 completion** — add a long-conversation prompt category and record
+   the documented expected behaviour for each of the 13 prompts. Neither requires
+   new source changes.
+2. **AUDIT-004 positive long-term recall** — the current prompt set never plants
+   a fact and asks for it back, so the recall path is unexercised in the
+   positive direction.
+3. **D-2 temperature decision** — `PLAN.md` §Phase 1 requires this resolved
+   *before* a behavioural baseline is treated as authoritative. The 0.7 used
+   above is unratified.
+4. **AUDIT-006** — the smallest safe next change and its rollback path are still
+   undefined, which is what keeps exit criterion 7 **PARTIAL**.
+5. **D-8** — needs `tools/ctx_report.py` against the GGUF; blocked on a model
+   load that has not been authorized.
+6. **D-12 / D-13** — product decisions, Phase 5.
+7. **Exit criterion 6** — `README.md` was corrected in this pass (D-11), but
+   `PLAN.md` §Phase 0 status and `BASELINE.md` must be re-read together to
+   confirm no further doc conflicts remain.
 
 ---
 

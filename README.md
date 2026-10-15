@@ -17,13 +17,19 @@ beyond an agent with personality
 > below are preserved but unverified; see `PLAN.md` for exit criteria and
 > `BASELINE.md` for what is measured vs. historical.
 >
-> **AUDIT-004 is NOT complete.** The fixed-prompt benchmark (`tools/bench.py`)
-> has not been executed against the current 7B model. All 7B latency, VRAM,
-> throughput and behavioural numbers in this repository are **historical
-> (captured 2026-08-26) and not re-validated**.
+> **AUDIT-004 is NOT complete, but a benchmark now exists.** The fixed-prompt
+> benchmark (`tools/bench.py`) was executed against the current 7B model on
+> 2026-10-15 — 13/13 prompts, process exit code 0. Its latency is
+> **monitor-contaminated** and must not be read as a clean performance figure or
+> compared with the 2026-08-26 numbers elsewhere in this repository, which remain
+> historical. AUDIT-004 still needs long-conversation coverage, documented
+> expected behaviour per prompt, and a positive long-term-memory recall test. See
+> `BASELINE.md`.
 >
-> Implemented ≠ verified. The deterministic test suite passes 138 assertions;
+> Implemented ≠ verified. The deterministic test suite passes **141** assertions;
 > the 3 LLM-dependent end-to-end assertions have not been run in the audit.
+>
+> **Phase 1 has not been cleared to proceed.**
 
 ---
 
@@ -52,7 +58,7 @@ beyond an agent with personality
 
 - **Short-term memory** — recent conversation with 8-message / chat-template budget, ignore/truncate rules
 - **Long-term memory** — persistent JSON (up to 500 facts), relevance-scored injection (top 10), dedup, keyword-importance extraction
-- **Fact extraction** — `memory/extractor.py` turns seeds ("aku ulang tahun bulan depan") into importance-weighted facts
+- **Fact extraction** — `memory/extractor.py` turns *explicit* seeds ("inget ya, ulang tahun aku bulan depan") into importance-weighted facts. Since 2026-10-15 a `ya`/`bahwa`/`kalau` particle is required, so a recall question such as "inget ga kemarin kita bahas apa?" is no longer misread as a save command. A bare imperative without the particle is currently not captured — tracked as `PLAN.md` D-12
 - **Emotional memory** — valence/arousal records with recurrence merging and salience filtering
 
 ## Tool System
@@ -144,7 +150,7 @@ Veil/
 ├── app.py                      ← CLI entry point
 ├── app_tui.py                  ← TUI entry point (rich, split-panel)
 ├── config.py                   ← all tunables + .env
-├── test_agent.py               ← 138 deterministic assertions + 3 LLM-dependent
+├── test_agent.py               ← 141 deterministic assertions + 3 LLM-dependent
 │
 ├── core/
 │   ├── bootstrap.py            ← App startup consolidation
@@ -380,8 +386,12 @@ automatically.
 python test_agent.py
 ```
 
-**Verified 2026-10-11: 138 deterministic assertions pass, 0 fail.** The suite is
+**Verified 2026-10-15: 141 deterministic assertions pass.** The count rose from
+138 when three context-boundary assertions were added. The suite is
 self-contained — no network and no GGUF required for the deterministic portion.
+That count was obtained from an isolated run with the model binding blocked and
+writes redirected to a sandbox, **not** by running `test_agent.py` directly
+against the production configuration.
 
 - tool system — calculator + datetime
 - long-term memory + fact extraction
@@ -395,8 +405,11 @@ The 3 **LLM-dependent end-to-end assertions** (chat, calculator-via-orchestrator
 streaming) require the GGUF and were **not run** during the Phase 0 audit; they
 are reported separately rather than counted as passing.
 
-`tools/bench.py` (13 fixed prompts, baseline comparison) also requires the GGUF
-and has **not** been executed against the current 7B model — see `BASELINE.md`.
+`tools/bench.py` (13 fixed prompts, baseline comparison) requires the GGUF. It
+**was executed against the current 7B model on 2026-10-15** — 13/13 prompts,
+exit code 0 — from an isolated sandbox with production state, memory and logs
+untouched. Its latency is monitor-contaminated; see `BASELINE.md` before using
+the numbers.
 
 ---
 
