@@ -38,6 +38,28 @@ Avoid putting unrelated responsibilities into a single `PersonalityCore`-style g
 
 When adding a feature, decide which subsystem owns it before implementing it.
 
+### Known gaps against these boundaries (recorded 2026-10-11)
+
+The rules above are the requirements. They are **not** relaxed to match current
+code. The following are recorded discrepancies between requirement and
+implementation, found during the Phase 0 repository audit:
+
+- **God object (D-6).** `personality/core.py` (~200 lines) currently performs
+  emotion analysis, conflict/cooldown handling, inactivity effects, long-term
+  and emotional memory, tool routing, prompt assembly, rhythm, and state
+  persistence (`save_state` on every `handle()`). This is the pattern the rule
+  above prohibits. Decomposition should be incremental and behaviour-preserving;
+  extracting the persistence side-effects behind one seam is the suggested first
+  step. Owned by Phase 4/5.
+- **Hardcoded character (D-7).** The Character System section below requires
+  data-driven `characters/stella/*.yaml` definitions. No `characters/`
+  directory exists; Stella's identity lives in `personality/stella.py` and is
+  imported directly by the runtime core (`from personality import stella as
+  identity`). The target structure in `DESIGN.md` is a proposal, not something
+  to reverse-engineer from what the code happens to do. Owned by Phase 6.
+
+Neither gap justifies rewriting the rule to match the code.
+
 ## Character System
 
 Do not hardcode Stella-specific identity, lore, or personality into generic runtime modules.
