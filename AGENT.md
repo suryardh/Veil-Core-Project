@@ -196,6 +196,19 @@ LLM-dependent tests should be separated from deterministic unit tests.
 
 Network/model availability must not be required for the core test suite.
 
+A defect guard should assert the *ordering* or *call-time* state it claims to
+protect, not the value observed after the fact. `test_bench_reaction_guard.py`
+records `reactions_enabled` inside `handle()` because reading the flag after the
+run would pass even if the assignment moved below the first call.
+
+A guard that runs production code must sandbox its own writes: `chdir` to a fresh
+temporary directory before importing, block the model load, and restore `cwd`,
+`sys.path` and `sys.modules` in `finally`. Logging handlers holding sandbox files
+must be closed before removal — on Windows an open file cannot be deleted.
+
+Prefer `check()`-style reporting over bare `assert`: a bare assert aborts the whole
+runner with a traceback and is compiled out under `python -O`.
+
 ## VTuber / Voice Compatibility
 
 The runtime may eventually emit structured metadata such as:

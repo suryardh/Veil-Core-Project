@@ -18,6 +18,10 @@
 > See [Discrepancy register](#discrepancy-register-phase-0),
 > [Post-C1 benchmark evidence](#post-c1-benchmark-evidence) and
 > [AUDIT-006](#audit-006--smallest-safe-next-change-decided-2026-10-15).
+>
+> Four local commits (D-1, D-4/D-5 and the C1/C2 regression runners) are recorded
+> in [Change Log](#change-log). `prototypev1` is **not pushed**: `origin/prototypev1`
+> is still at `667022c`.
 
 ---
 
@@ -194,11 +198,11 @@ Phase 0 is complete when:
 
 | ID | Finding | Severity | Status | Owning phase |
 |---|---|---|---|---|
-| D-1 | `core/bootstrap.py` error text said "Download Qwen2.5-**3B**" while the configured path is the **7B** model | Low | **Fixed in working tree, uncommitted** — message now derives the filename from `config.MODEL_PATH`; not present in `e827a8e` | Phase 0 |
+| D-1 | `core/bootstrap.py` error text said "Download Qwen2.5-**3B**" while the configured path is the **7B** model | Low | **Fixed** in `72321f8` — message now derives the filename from `config.MODEL_PATH` | Phase 0 |
 | D-2 | `.env` (gitignored) sets `VEIL_TEMP=0.7`, making the tuned `0.6` default unreachable. Effective runtime temperature is **0.7**. Decide the intended value before recording a behavioural baseline | Medium | **Open — needs a decision.** Precedence verified: OS env > `.env` > code default. See §External references for a caution about unratified temperature values | Phase 1 |
 | D-3 | `BASELINE.md` "Model & Runtime Config" described the 3B/CPU reference, not current config | Medium | **Fixed** in `e827a8e` | Phase 0 |
-| D-4 | `core/agent.py` omitted a 1-char separator from context accounting; assembled prompt could reach `limit + 1` | Low | **Fixed in working tree, uncommitted** — worst case now exactly `limit` (14528); not present in `e827a8e` | Phase 2 |
-| D-5 | Context-guard tests used a 216-char system marker, so the binding branch was never exercised | Low | **Fixed in working tree, uncommitted** — 3 boundary assertions added to `test_agent.py` at realistic system size; not present in `e827a8e` | Phase 2 |
+| D-4 | `core/agent.py` omitted a 1-char separator from context accounting; assembled prompt could reach `limit + 1` | Low | **Fixed** in `b2e6517` — worst case now exactly `limit` (14528) | Phase 2 |
+| D-5 | Context-guard tests used a 216-char system marker, so the binding branch was never exercised | Low | **Fixed** in `b2e6517` — 3 boundary assertions added to `test_agent.py` at realistic system size | Phase 2 |
 | D-6 | `AGENT.md` prohibits a PersonalityCore god object; `personality/core.py` owns emotion, conflict, inactivity, memory, tools, prompting and persistence | Medium | **Open — documented gap** | Phase 4 / 5 |
 | D-7 | `AGENT.md`/`DESIGN.md` require YAML-driven characters; Stella is hardcoded in `personality/stella.py` and imported by the core | Medium | **Open — documented gap.** See §External references for a precedent that data-driven persona config is low-risk | Phase 6 |
 | D-8 | `PLAN.md` "~2,100 tokens" context estimate is unverified | Info | **Open — evidence-limited.** Post-D-4 measured char worst case is 14528 (14529 before the fix); the ratio and the token figure both need `tools/ctx_report.py` | Phase 2 |
@@ -208,11 +212,11 @@ Phase 0 is complete when:
 | D-12 | `memory/extractor.py` requires a `ya`/`bahwa`/`kalau` particle before seeding a fact, so a **bare imperative** such as `ingat ulang tahun aku bulan depan` is no longer saved | Low | **Open — product decision needed.** Deliberate narrowing: the bare form previously seeded, and a recall question (`inget ga ...`) was wrongly saved as a fact. No test covers the bare form either way; `AGENT.md` defines no save marker | Phase 5 |
 | D-13 | `LongTermMemory.get_relevant_facts()` returns `scored[:10]` with **no relevance floor**, so facts scoring zero against the query are still injected into the prompt | Medium | **Open.** Verified 2026-10-15: an unrelated query still returned a stored fact. Injection precision degrades as the store grows | Phase 5 |
 
-**Merged: D-3 (`e827a8e`), D-9 (`b53eafc`). Fixed but uncommitted in the working
-tree: D-1, D-4, D-5. Resolved in this documentation pass: D-11. Open: D-2, D-6,
-D-7, D-8, D-10, D-12, D-13.**
-D-1/D-4/D-5 are present only in the current working tree; they are **not** in the
-`prototypev1` HEAD commit `e827a8e`.
+**Merged: D-3 (`e827a8e`), D-9 (`b53eafc`). Committed on `prototypev1`: D-1
+(`72321f8`), D-4 and D-5 (`b2e6517`). Resolved in this documentation pass: D-11.
+Open: D-2, D-6, D-7, D-8, D-10, D-12, D-13.**
+D-1/D-4/D-5 are committed on `prototypev1` at HEAD `5a424db`, but `prototypev1` is
+**not yet pushed**: `origin/prototypev1` is still at `667022c`.
 The architectural requirements in `AGENT.md` and `DESIGN.md` stand as written;
 D-6 and D-7 are recorded gaps between requirement and implementation, not licence
 to weaken the requirement. D-2 and D-10 are left open deliberately: both would
@@ -1136,8 +1140,36 @@ Do not skip ahead. The first goal is to establish the actual repository state wi
 15. Reassess whether LoRA is actually necessary
 ```
 
+### Local commits ahead of origin (not pushed)
+
+Recorded 2026-10-17. These exist only on the local `prototypev1` branch; `origin/prototypev1`
+is at `667022c`.
+
+| Commit | Scope | Message |
+|---|---|---|
+| `72321f8383c2fa62198edbd69e48d96b29c35fd0` | `core/bootstrap.py` | `fix: derive model name from config in error message` (D-1) |
+| `b2e65179e6c09e3c5f55e7ac04998610d329290e` | `core/agent.py`, `test_agent.py` | `fix: reserve separator character in prompt budget` (D-4, D-5) |
+| `1a8170bf85e6f56ec4d3c36fb63c0158957d3cbb` | `test_bench_reaction_guard.py` | `test: strengthen bench reaction guard regression test` (C1) |
+| `5a424db3bca1b06c82cc93b65bd72de39f0b9f43` | `test_memory_extraction_guard.py` | `test: add memory extraction regression guards` (C2) |
+
+None of these changes Phase 0 or Phase 1 status. D-2, D-8, D-10 and AUDIT-006 remain
+unresolved.
+
 ## Change Log
 
+- **2026-10-17 — test (`1a8170b`, `5a424db`):** added two regression runners for defects
+  found during the Phase B benchmark investigation. `test_bench_reaction_guard.py`
+  (15 assertions) pins the `reactions_enabled = False` guard in `tools/bench.py`; it
+  records the flag at each `handle()` call so the ordering of the assignment is
+  actually verified. `test_memory_extraction_guard.py` (33 assertions) covers the
+  particle-gated extractor and the recall-before-persist ordering. Both are explicit
+  runners (no `test_*` functions), sandbox themselves, block the GGUF load, and leave
+  production state untouched. Committed separately; `prototypev1` still unpushed.
+- **2026-10-17 — fix (`b2e6517`):** reserved the 1-char separator in the prompt budget
+  (D-4) and added 3 boundary assertions that exercise the binding branch (D-5).
+  Worst-case prompt is now exactly `CTX_PROMPT_CHAR_LIMIT` (14528), not 14529.
+- **2026-10-17 — fix (`72321f8`):** `core/bootstrap.py` error message now derives the
+  model filename from `config.MODEL_PATH` (D-1) instead of hardcoding the 3B name.
 - **2026-10-11 — docs:** reconciled roadmap with verified implementation. Recorded that the
   7B migration already happened (2026-08-26) and that Phase 1 now needs *revalidation*, not
   migration. Logged the Phase 0 discrepancy register (D-1…D-10) with owning phases.

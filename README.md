@@ -147,10 +147,12 @@ flowchart LR
 
 ```text
 Veil/
-├── app.py                      ← CLI entry point
-├── app_tui.py                  ← TUI entry point (rich, split-panel)
-├── config.py                   ← all tunables + .env
-├── test_agent.py               ← 141 deterministic assertions + 3 LLM-dependent
+├── app.py                          ← CLI entry point
+├── app_tui.py                      ← TUI entry point (rich, split-panel)
+├── config.py                       ← all tunables + .env
+├── test_agent.py                   ← 141 deterministic assertions + 3 LLM-dependent
+├── test_bench_reaction_guard.py    ← reaction-guard regressions (C1, 15 assertions)
+├── test_memory_extraction_guard.py ← memory-extraction regressions (C2, 33 assertions)
 │
 ├── core/
 │   ├── bootstrap.py            ← App startup consolidation
@@ -404,6 +406,26 @@ against the production configuration.
 The 3 **LLM-dependent end-to-end assertions** (chat, calculator-via-orchestrator,
 streaming) require the GGUF and were **not run** during the Phase 0 audit; they
 are reported separately rather than counted as passing.
+
+## Regression runners (Phase 0)
+
+Two narrower suites guard defects found during the Phase B benchmark investigation.
+Both are **explicit runners**, not pytest modules — they define no `test_*`
+functions and must be invoked directly:
+
+```bash
+python test_bench_reaction_guard.py     # 15 assertions, exit 0
+python test_memory_extraction_guard.py  # 33 assertions, exit 0
+```
+
+Each `chdir`s into a fresh `%TEMP%` sandbox before importing, so relative paths in
+`config` resolve outside the repository; both block `llama_cpp` so no GGUF is
+opened, and both assert by digest that `memory/long_term.json`, `data/state.json`
+and `logs/veil.log` are unchanged afterwards. Importing either module has no side
+effects, so pytest collection runs nothing. **pytest is not installed in this
+environment and `--collect-only` has not been run** — import safety was
+verified by importing the modules directly, and the 15/15 and 33/33 results come
+from manual invocation.
 
 `tools/bench.py` (13 fixed prompts, baseline comparison) requires the GGUF. It
 **was executed against the current 7B model on 2026-10-15** — 13/13 prompts,

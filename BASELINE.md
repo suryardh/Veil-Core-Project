@@ -421,6 +421,7 @@ criteria remain `Not assessed`.
 | B-07 failure boundary | `Needs review` — no source rule defines disallowed interjections |
 | Behavioural assessment of any run | Not performed; requires full-length outputs, not 110-char previews |
 | Positive long-term recall | **Done 2026-10-15** — STORE / RETRIEVAL / INJECT / ANSWER all pass with a valid negative control (see the section below). Limit: keyword-overlapping query, n=1 |
+| Automated coverage of the B-01…B-13 criteria | **None.** `test_bench_reaction_guard.py` and `test_memory_extraction_guard.py` (added 2026-10-17) cover two specific Phase B defects; they do not evaluate any B-criterion |
 
 ## Positive long-term recall (AUDIT-004 item #2)
 
@@ -475,3 +476,4 @@ into `tools/bench.py` and does not by itself change exit criterion 3.
 - Character rules: `personality/stella.py`
 - Evaluation axes: `AGENT.md:170-181`
 - Remaining Phase 0 work: `PLAN.md` §Remaining Phase 0 work
+- Implementation, commit and exit-criteria status: `PLAN.md` §Change Log and §Discrepancy register (not duplicated here — this file records measurements)
