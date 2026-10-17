@@ -7,14 +7,17 @@
 > **Current roadmap status:** Phase 0 — Repository Audit is the active priority. Existing roadmap phases remain preserved, but work that changes models or architecture should wait until the audit exit criteria are met.
 >
 > **Phase 0 status as of 2026-10-15: INCOMPLETE.** Of the seven Phase 0 exit
-> criteria, five are **met**, one is **partial** (#7), and one is **not met**
-> (#3, AUDIT-004). A post-C1 behavioural benchmark has now been **executed
-> successfully** — 13/13 prompts, process exit code 0, 105.4 s, `VEIL_TEMP=0.7`,
-> CPU-only — but **AUDIT-004 remains not met**: the benchmark has no
-> long-conversation coverage, no documented expected behaviour per prompt, and
-> positive long-term-memory recall is still untested. Phase 0 is **not** closed.
-> See [Discrepancy register](#discrepancy-register-phase-0) and
-> [Post-C1 benchmark evidence](#post-c1-benchmark-evidence).
+> criteria, six are **met** and one is **not met** (#3, AUDIT-004). A post-C1
+> behavioural benchmark was executed successfully (13/13 prompts, process exit
+> code 0, 105.4 s, `VEIL_TEMP=0.7`, CPU-only). Per-prompt expected behaviour
+> (AUDIT-004 #1) and a positive long-term recall test (AUDIT-004 #2) are both
+> complete. **AUDIT-004 remains not met** for two reasons: the long-conversation
+> category is documented but not implemented in the runner, and no run has been
+> scored against the B-01…B-13 criteria because `tools/bench.py` discards full
+> responses. Phase 0 is **not** closed.
+> See [Discrepancy register](#discrepancy-register-phase-0),
+> [Post-C1 benchmark evidence](#post-c1-benchmark-evidence) and
+> [AUDIT-006](#audit-006--smallest-safe-next-change-decided-2026-10-15).
 
 ---
 
@@ -149,11 +152,17 @@ Review at minimum:
 - [ ] Compare the existing implementation with the proposed boundaries in `DESIGN.md`.
 - [ ] Identify which roadmap assumptions remain valid.
 - [ ] Decide whether the next step is incremental improvement, targeted replacement, or a larger refactor.
-- [ ] Define the smallest safe next change.
-- [ ] Record rollback steps and data-protection requirements.
+- [x] Define the smallest safe next change. — see [AUDIT-006 decision record](#audit-006--smallest-safe-next-change-decided-2026-10-15)
+- [x] Record rollback steps and data-protection requirements. — see [AUDIT-006 decision record](#audit-006--smallest-safe-next-change-decided-2026-10-15) §Rollback plan
 - [ ] Update this plan only where audit evidence justifies a change.
 
 **Output:** a short decision record explaining what will change, what will remain, why, and how to roll back.
+
+> The two boxed items are answered by [AUDIT-006 decision record](#audit-006--smallest-safe-next-change-decided-2026-10-15),
+> which records the smallest safe next change and its `git revert` rollback
+> procedure. **That record is a decision only — the proposed `tools/bench.py`
+> `--output` capture is not implemented**, and its implementation needs separate
+> authorization. The remaining items above are still genuinely open.
 
 ## Phase 0 Exit Criteria
 
@@ -169,29 +178,29 @@ Phase 0 is complete when:
 
 **Until these criteria are met, do not start a model migration or broad architecture rewrite.** Small, non-destructive fixes needed to run the audit are allowed and should be documented.
 
-### Exit criteria status (verified 2026-10-11)
+### Exit criteria status (re-verified 2026-10-15)
 
 | # | Criterion | State | Evidence |
 |---|---|---|---|
 | 1 | Model/runtime configuration verified | **MET** | measured at runtime: 7B, `N_CTX=4096`, `CTX_PROMPT_CHAR_LIMIT=14528`, effective temp **0.7** (see D-2) |
 | 2 | Request-lifecycle diagram | **MET** | `README.md` Architecture section; traced through `personality/core.py` → `core/agent.py` → `llm/engine.py` |
-| 3 | Tests + behavior benchmark recorded | **NOT MET** | 141 deterministic assertions pass in the isolated verification run; `tools/bench.py` **has now been executed** on the current 7B model — post-C1 run 2026-10-15, 13/13 prompts, exit code 0 (see [Post-C1 benchmark evidence](#post-c1-benchmark-evidence)). AUDIT-004 still unmet: no long-conversation coverage, no per-prompt expected behaviour, positive long-term recall untested |
+| 3 | Tests + behavior benchmark recorded | **NOT MET** | 141 deterministic assertions pass in the isolated verification run; `tools/bench.py` **has now been executed** on the current 7B model — post-C1 run 2026-10-15, 13/13 prompts, exit code 0 (see [Post-C1 benchmark evidence](#post-c1-benchmark-evidence)). Expected behaviour for all 13 prompts is now specified (`BASELINE.md` §Benchmark specification), but the long-conversation category is documented-not-implemented and **no run has been assessed against the criteria** — retained outputs are 110-char previews only |
 | 4 | Backup/restore path verified | **MET** | checksummed envelope, tamper + future-schema rejection, v2→v3 migration — covered by the suite |
 | 5 | Module dispositions | **MET** | `README.md` structure + `AGENT.md` §Discrepancies |
 | 6 | Conflicts recorded | **MET** | this section |
-| 7 | Next step evidence-backed + rollback | **PARTIAL** | the next step is gated on the model copy, which is not yet authorized |
+| 7 | Next step evidence-backed + rollback | **MET** | AUDIT-006 records the smallest safe next change (`tools/bench.py` full-response capture), its evidence (`tools/bench.py:105-106` discards full text; nothing imports the module), and a `git revert` rollback procedure — see [AUDIT-006](#audit-006--smallest-safe-next-change-decided-2026-10-15). Implementation still needs its own authorization and D-2 remains open |
 
 ### Discrepancy register (Phase 0)
 
 | ID | Finding | Severity | Status | Owning phase |
 |---|---|---|---|---|
 | D-1 | `core/bootstrap.py` error text said "Download Qwen2.5-**3B**" while the configured path is the **7B** model | Low | **Fixed in working tree, uncommitted** — message now derives the filename from `config.MODEL_PATH`; not present in `e827a8e` | Phase 0 |
-| D-2 | `.env` (gitignored) sets `VEIL_TEMP=0.7`, making the tuned `0.6` default unreachable. Effective runtime temperature is **0.7**. Decide the intended value before recording a behavioural baseline | Medium | **Open — needs a decision.** Precedence verified: OS env > `.env` > code default | Phase 1 |
+| D-2 | `.env` (gitignored) sets `VEIL_TEMP=0.7`, making the tuned `0.6` default unreachable. Effective runtime temperature is **0.7**. Decide the intended value before recording a behavioural baseline | Medium | **Open — needs a decision.** Precedence verified: OS env > `.env` > code default. See §External references for a caution about unratified temperature values | Phase 1 |
 | D-3 | `BASELINE.md` "Model & Runtime Config" described the 3B/CPU reference, not current config | Medium | **Fixed** in `e827a8e` | Phase 0 |
 | D-4 | `core/agent.py` omitted a 1-char separator from context accounting; assembled prompt could reach `limit + 1` | Low | **Fixed in working tree, uncommitted** — worst case now exactly `limit` (14528); not present in `e827a8e` | Phase 2 |
 | D-5 | Context-guard tests used a 216-char system marker, so the binding branch was never exercised | Low | **Fixed in working tree, uncommitted** — 3 boundary assertions added to `test_agent.py` at realistic system size; not present in `e827a8e` | Phase 2 |
 | D-6 | `AGENT.md` prohibits a PersonalityCore god object; `personality/core.py` owns emotion, conflict, inactivity, memory, tools, prompting and persistence | Medium | **Open — documented gap** | Phase 4 / 5 |
-| D-7 | `AGENT.md`/`DESIGN.md` require YAML-driven characters; Stella is hardcoded in `personality/stella.py` and imported by the core | Medium | **Open — documented gap** | Phase 6 |
+| D-7 | `AGENT.md`/`DESIGN.md` require YAML-driven characters; Stella is hardcoded in `personality/stella.py` and imported by the core | Medium | **Open — documented gap.** See §External references for a precedent that data-driven persona config is low-risk | Phase 6 |
 | D-8 | `PLAN.md` "~2,100 tokens" context estimate is unverified | Info | **Open — evidence-limited.** Post-D-4 measured char worst case is 14528 (14529 before the fix); the ratio and the token figure both need `tools/ctx_report.py` | Phase 2 |
 | D-9 | `tools/bench.py:118` referenced removed `CTX_BUDGET_SYSTEM` / `CTX_BUDGET_RESPONSE` | Medium | **Fixed** in `b53eafc` | Phase 0 |
 | D-10 | `config.py` `float(os.getenv("VEIL_TEMP", ...))` raises `ValueError` if the variable is set but empty | Low | **Open — not fixed**; `config.py` is out of audit scope | Phase 0 |
@@ -264,21 +273,185 @@ Captured 2026-10-15 against the current checkout. Raw report:
    prompt 13 appends an unsolicited "sayang!". Both are pre-existing findings
    (persona identity and persona-leak diagnostics), **not** new regressions.
 
+## AUDIT-006 — Smallest safe next change (decided 2026-10-15)
+
+### Recommendation
+
+**Persist full prompt/response records from `tools/bench.py` to an explicit,
+gitignored output path.**
+
+### Problem it addresses
+
+`tools/bench.py:105-106` keeps only a character count and a truncated preview:
+
+```python
+preview = " ".join(response.split())[: args.preview_chars]   # default 110
+rows.append((category, prompt, dt, len(response), preview))
+```
+
+The runner writes **no file at all** — output is stdout-only, and nothing
+imports `tools/bench.py`. Verified: `app.py`, `app_tui.py` and `core/bootstrap.py`
+do not reference it, and no module imports it. So after any run the full response
+text is **unrecoverable**.
+
+That is the concrete reason the post-C1 run could not be scored against the
+per-prompt criteria in `BASELINE.md` §Benchmark specification. Three of the 13
+responses exceeded the 110-character preview (B-10 = 385, B-08 = 163,
+B-01 = 122), so whole-response criteria were undecidable and behavioural
+assessment was recorded as `Not assessed`.
+
+This blocks **exit criterion 3**, the last NOT MET criterion, and it also blocks
+any future assessment of long-conversation behaviour, which cannot be judged from
+110-character snippets.
+
+### Smallest plausible scope
+
+Append one JSONL record per prompt containing at minimum
+`{id, category, prompt, latency, chars, response}` beside the existing stdout
+report, written to a path supplied by a new `--output` flag. Nothing else in the
+runner changes. No prompt, no prompt ordering, no warmup, no sampling.
+
+### Files likely to change
+
+| File | Change |
+|---|---|
+| `tools/bench.py` | add `--output` argument; append the full `response` to a JSONL record |
+
+### Files that must remain untouched
+
+`config.py`, `.env`, `personality/*`, `core/*`, `memory/*`, `llm/*`, `tools/bench.py`'s
+prompt list and warmup logic, `data/`, `memory/*.json`, `logs/`, `models/`.
+
+### Prerequisites
+
+1. Commit the currently unstaged work (`BASELINE.md`, `PLAN.md`, and the D-1/D-4/D-5
+   fixes) so the tree is checkpointed. This is hygiene, not part of the change.
+2. **Owner decision on D-2** — the run must use a ratified temperature, otherwise
+   the captured responses inherit the same unratified-0.7 caveat.
+3. A GGUF run needs explicit authorization, as with the post-C1 run.
+
+### Acceptance criteria
+
+1. A run writes one JSONL line per prompt containing the complete response text.
+2. Each record round-trips: `response` length equals the reported `Chars`.
+3. Output path is supplied by flag and defaults to nowhere — without `--output`
+   the runner behaves exactly as today.
+4. Output lands under a `.gitignore`d path (`tmp/` or `temp/` are already listed)
+   and **never** under `logs/`, `data/`, or `memory/`.
+5. `python -B test_bench_reaction_guard.py` still passes 15/15 — the C1 guard is
+   untouched.
+6. A subsequent authorized run can score all 13 prompts against B-01…B-13.
+
+### Risks and benefits
+
+**Risk — low.** One file, additive, no runtime path (`tools/bench.py` is imported
+by nothing). Worst case is an extra file in a gitignored directory. The main
+hazard is choosing an output path inside `logs/`, which is protected; the
+acceptance criteria forbid that explicitly.
+
+**Benefit — unblocks the last failing exit criterion** and makes every future
+benchmark scorable instead of unassessable. It also becomes the prerequisite for
+scoring long-conversation behaviour, whatever form that eventually takes.
+
+### Why this rather than the alternatives
+
+| Alternative | Why deferred |
+|---|---|
+| Implement the long-conversation category | Larger: needs scenario grouping, session control and cross-turn assertion points in the runner. It is also **unassessable without this change first**, since cross-turn behaviour cannot be judged from truncated previews. Build the capture, then the category. |
+| Run `tools/ctx_report.py` to close D-8 | Owned by Phase 2 and does not move exit criterion 3. It also `chdir`s to the repository root at `tools/ctx_report.py:12` and constructs `LLMEngine` at line 33, so it needs a GGUF authorization and carries a production-write path that the sandbox wrapper must contain. |
+| Resolve D-2 | **Needs owner decision.** It is a product decision about the intended temperature, not a code change. `config.py` is protected audit scope and `.env` is gitignored (`.gitignore:14`). The audit must not make this call. |
+| Fix D-10 | Same `config.py` protection. **Needs owner decision.** Confirmed still live: `float(os.getenv("VEIL_TEMP", "0.6"))` raises `ValueError` when the variable is set but empty. |
+| D-12 / D-13 | Phase 5 product decisions. Neither blocks exit criterion 3, and D-13 did not affect the recall result (the query shared tokens with the fact, so the absent relevance floor was not exercised). Defer deliberately. |
+| Commit pending work | Necessary as a prerequisite checkpoint, but it is not itself a change to the codebase. |
+
+### Rollback plan
+
+1. **Checkpoint.** Record the pre-change HEAD SHA before starting. The change must
+   land as exactly one commit touching exactly one file. No `git reset --hard`, no
+   `git clean`, no deletion of untracked files.
+2. **Identify the change.** `git show --stat <sha>` must list only
+   `tools/bench.py`. If it lists anything else, the commit is not the audited
+   change and must not be reverted as if it were.
+3. **Revert.** `git revert --no-edit <sha>` — this adds a new commit and leaves
+   history intact. No force, no amend, no rebase, no reset. Reverting the single
+   file restores byte-identical previous behaviour, including stdout-only output.
+4. **Verify unrelated work is intact.** `git status --short` must still show the
+   untracked user files (`problem.md`, `test_agent_audit.py`,
+   `test_bench_reaction_guard.py`, `test_memory_extraction_guard.py`,
+   `veil_personality_benchmark.json`) and any intentionally unstaged edits.
+5. **Validate after rollback.** `python -B test_bench_reaction_guard.py` → 15/15;
+   re-hash the protected files (`config.py`, `.env`, `data/state.json`,
+   `memory/long_term.json`, `logs/`) against their recorded baselines.
+6. **Persistent data.** The change writes only to a gitignored path, so rollback
+   is code-only. Any benchmark run itself still writes `data/state.json` and
+   `logs/`; those writes must be contained by the existing sandbox wrapper
+   (`%TEMP%\veil-audit\run_bench_sandbox.py`), which confines CWD and refuses to
+   run when sandbox state has drifted. No configuration or memory-store change is
+   involved, so nothing needs restoring there.
+
+## External references
+
+> **These are not repository evidence.** Everything in this section comes from a
+> third-party public repository, not from Veil. It carries no weight in any exit
+> criterion and must not be treated as verification. It is recorded only so that
+> the reasoning behind D-2 and D-7 is auditable.
+
+### `rayenfeng/riko_project` (MIT, 1.2k stars, 5 commits)
+
+An anime voice companion: OpenAI API (`gpt-4.1-mini`), GPT-SoVITS for TTS,
+Faster-Whisper for ASR. **Four Python files, ~6.4 KB in total.**
+
+Two points were relevant to Veil:
+
+- **D-7 precedent.** The project loads its persona from `character_config.yaml`
+  at import time, proving the data-driven-character pattern is simple and
+  widely used. It is **not** a template for Veil: the file is 562 bytes with a
+  single flat preset, whereas `AGENT.md` requires layered
+  `characters/stella/{character,personality,lore,rules}.yaml`. The value of the
+  reference is that it lowers the perceived risk of the fix, nothing more.
+- **D-2 caution.** `server/process/llm_funcs/llm_scr.py` hardcodes
+  `temperature=1, top_p=1` with no recorded rationale. That is precisely the
+  unratified-value failure mode D-2 concerns, and it argues that Veil's
+  temperature decision should be justified rather than inherited.
+
+**What it does not provide.** Riko has no long-term memory, no extraction, no
+relevance ranking, no relationship state, no context budget or truncation, and
+no benchmark, evaluation harness or tests. It therefore offers nothing for
+AUDIT-004, AUDIT-006, D-8, D-10 or D-13 — it simply does not implement the
+subsystems those items concern.
+
+**Popularity is not an architectural argument.** The star count reflects
+interest in a voice-companion demo, not in character-runtime design. Veil has 44
+Python modules, five-dimensional relationship state, conflict dynamics,
+multi-store memory and 141 deterministic assertions; Riko has none of these.
+This reference must not be used to justify simplifying Veil.
+
 ## Remaining Phase 0 work
 
 Phase 0 cannot close until these are done. Ordered by dependency:
 
-1. **AUDIT-004 completion** — add a long-conversation prompt category and record
-   the documented expected behaviour for each of the 13 prompts. Neither requires
-   new source changes.
-2. **AUDIT-004 positive long-term recall** — the current prompt set never plants
-   a fact and asks for it back, so the recall path is unexercised in the
-   positive direction.
+1. **AUDIT-004 specification** — **partially done 2026-10-15.** The
+   long-conversation category and the per-prompt expected-behaviour criteria
+   (B-01…B-13) are now specified in `BASELINE.md` §Benchmark specification.
+   Still outstanding: the category is **documented but not implemented** — the
+   runner is a flat loop with no scenario grouping or session control — and no
+   run has been assessed against the criteria, because only 110-character
+   previews survive. Exit criterion 3 stays **NOT MET**.
+2. **AUDIT-004 positive long-term recall** — **done 2026-10-15.** An isolated
+   integration test stored a synthetic fact and recalled it through the real
+   pipeline with short-term history empty: STORE / RETRIEVAL / INJECT / ANSWER
+   all passed, and a negative control with an empty store confirms the recall
+   is attributable to long-term memory. Details and limits in `BASELINE.md`
+   §Positive long-term recall. It is **not** wired into `tools/bench.py`, so it
+   does not by itself lift exit criterion 3.
 3. **D-2 temperature decision** — `PLAN.md` §Phase 1 requires this resolved
    *before* a behavioural baseline is treated as authoritative. The 0.7 used
    above is unratified.
-4. **AUDIT-006** — the smallest safe next change and its rollback path are still
-   undefined, which is what keeps exit criterion 7 **PARTIAL**.
+4. **AUDIT-006** — **decided 2026-10-15.** The smallest safe next change is to
+   persist full responses from `tools/bench.py` to a gitignored path; see
+   [AUDIT-006](#audit-006--smallest-safe-next-change-decided-2026-10-15) for the
+   decision and rollback plan. Implementation is **not** authorized by that
+   decision — it needs its own go-ahead.
 5. **D-8** — needs `tools/ctx_report.py` against the GGUF; blocked on a model
    load that has not been authorized.
 6. **D-12 / D-13** — product decisions, Phase 5.

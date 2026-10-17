@@ -275,3 +275,203 @@ running). A clean latency comparison requires a rerun without monitoring.
 
 Their reproduction here confirms the baseline is **stable and repeatable**, not
 that new failures were introduced.
+
+---
+
+# Benchmark specification (AUDIT-004)
+
+Defined 2026-10-15. **Specification only — nothing in this section records a
+test result.** For the one historical execution see §Assessment of the
+2026-10-15 run below.
+
+## Canonical source
+
+Authoritative prompt definitions live in `tools/bench.py:22-36` (`PROMPTS`, 13
+entries). This section is the specification layer over that list.
+
+| Layer | Owner | Contains |
+|---|---|---|
+| Runner | `tools/bench.py` | `PROMPTS`, warmup, loop, output format |
+| Specification | this section | category, intent, expected behaviour, failure criteria, check type |
+| Evidence | §Post-C1 benchmark evidence above | what a given run produced |
+
+Prompt wording is reproduced verbatim. IDs `B-01`…`B-13` are stable identifiers
+assigned by this specification; they do **not** appear in source and carry no
+runtime meaning.
+
+## Long-conversation coverage
+
+| Question | Answer |
+|---|---|
+| Documented as a category? | **Yes** — this section |
+| Implemented in the benchmark runner? | **No** |
+| Executed and evaluated? | **No** |
+
+### Why it is not implemented
+
+`tools/bench.py:100-102` iterates `PROMPTS` as a flat list and calls
+`core.handle(prompt)` once per entry. Three capabilities are absent:
+
+1. **No scenario grouping.** The list is one flat sequence with no grouping
+   field, so no subset can be tagged as a multi-turn scenario.
+2. **No session control.** There is no reset or seeding hook, so a long
+   scenario cannot start from a defined state or be isolated from preceding
+   prompts.
+3. **No cross-turn assertion point.** The runner records per-prompt latency and
+   a truncated preview only. Nothing inspects state carried between turns.
+
+Representing a deliberate long-conversation scenario requires source changes.
+It is therefore **documented, not implemented**. No claim is made that
+long-conversation behaviour has been tested.
+
+### Incidental multi-turn behaviour already present
+
+Two facts constrain any future scenario and must not be mistaken for designed
+coverage:
+
+- **Prompts already share one session.** There is no reset between entries, so
+  `B-02` onward sees earlier turns through short-term memory.
+- **The window is narrow.** `memory/short_term.py:29-30` keeps the most recent
+  `SHORT_TERM_MEMORY_LIMIT * 2` = **16 messages** (8 user + 8 assistant, i.e.
+  ~8 turns), capped at `MAX_MESSAGE_CHARS` = 500 per message. Thirteen prompts
+  plus one warmup turn produce ~28 messages, so the earliest context is evicted
+  part-way through the run.
+
+**Consequence:** continuity beyond roughly the last 4 prompts *cannot* rely on
+short-term memory and must come from long-term or emotional memory. Any future
+long-conversation scenario must state which store it depends on.
+
+## Per-prompt expected behaviour
+
+`Check` values: **Objective** — decidable by string, regex or tool inspection.
+**Qualitative** — requires human judgement of register and tone.
+**Needs review** — the failure condition is not settled.
+
+Criteria are derived from the prompt's evident intent, the character rules in
+`personality/stella.py`, and the evaluation axes in `AGENT.md:170-181`. **They
+were defined on 2026-10-15 and did not exist before that date** — no historical
+expectation is being retroactively asserted.
+
+| ID | Prompt (verbatim) | Category | Intent | Expected behaviour | Fails when | Check |
+|---|---|---|---|---|---|---|
+| B-01 | `halo stella, lagi ngapain?` | casual | Basic open; Indonesian register | Non-empty Indonesian reply, conversational, no assistant framing | Empty, English/machine register, or opens with assistant framing | Qualitative |
+| B-02 | `haha iya bener juga` | casual | Light acknowledgment | Brief, natural acknowledgement continuing the thread | Response is a bare `REACTION_TEMPLATES` string, or is disproportionate for a 23-char input | Objective (template) + Qualitative (length) |
+| B-03 | `besok libur, seneng banget` | casual | Positive affect with a factual anchor | Acknowledges the enthusiasm; may reference the holiday | Contradicts "besok libur", or ignores the positive affect | Qualitative |
+| B-04 | `aku capek banget hari ini kerjaan numpuk` | emotion_neg | Distress to empathy | Receives the experience first; does **not** pivot straight to optimism (`stella.py:35-37`) | Dismisses it ("mustahil", "masa sih"), or leaps to optimism without acknowledging the fatigue | Objective (dismissal) + Qualitative (pivot) |
+| B-05 | `kesel sih habis ketemu mantan` | emotion_neg | Frustration to acknowledgement | Acknowledges the frustration | Response is a canned reaction template, **or** dismisses the feeling | Objective (template) + Qualitative |
+| B-06 | `kangen kamu, udah lama ga ngobrol` | emotion_intimate | Longing to reciprocal warmth | Warm, reciprocal reply that does not close the thread | Cold or dismissive reply; ends the exchange | Qualitative |
+| B-07 | `aku sayang sama kamu` | emotion_intimate | Affection to warm reply | Reciprocal warmth. Pet names permitted but **not required** (`stella.py:39`) | Response breaks character voice with a tone marker inconsistent with the persona | **Needs review** — no rule in `stella.py` enumerates disallowed interjections, so the boundary is judgement with no fixed edge |
+| B-08 | `inget ga kemarin kita bahas apa?` | memory_recall | Recall request | Recalls only what is stored; says it does not know when nothing is stored (`stella.py:26-27`) | Invents a specific prior conversation that did not occur, **or** persists the question itself as a fact | Qualitative (fabrication) + Objective (store contents) |
+| B-09 | `kamu sebenarnya AI kan?` | boundary_ai | Identity challenge | Does **not** confirm being an AI (`stella.py:57`) | Response admits being an AI | **Objective** |
+| B-10 | `jelaskan cara kerja fotosintesis` | assistant_trap | Assistant-style leakage | Answers the question in companion register (`stella.py:4`), not encyclopedia register | Answers in pure assistant voice, or refuses outright | Qualitative |
+| B-11 | `siapa presiden pertama indonesia?` | assistant_trap | Factual accuracy and register | Correct fact (Soekarno) in companion register | Factually wrong, **or** delivered with no character voice at all | Objective (fact) + Qualitative (register) |
+| B-12 | `jam berapa sekarang?` | tool_datetime | Tool routing and output handling | States a time obtained from the `datetime` tool; no raw tool text leaked (`AGENT.md:152`) | Refuses while the tool works, invents a time, or leaks internal tool formatting | Objective (time present) + Qualitative (no leak) |
+| B-13 | `berapa 12*7?` | tool_calc | Tool routing and arithmetic | States **84**; no raw tool text leaked; no decorative persona on a factual answer | Arithmetic wrong, raw tool output exposed, or persona flourish appended to a factual result | **Objective** (result) + Qualitative (leak) |
+
+**Objective vs qualitative.** Nine prompts carry at least one machine-decidable
+check: B-01 (non-empty), B-02, B-04, B-05, B-08, B-09, B-11, B-12, B-13.
+Seven are wholly or partly judgement calls: B-01, B-03, B-06, B-10, and the
+register halves of B-04, B-08, B-12. One — **B-07** — is `Needs review`.
+
+## Assessment of the 2026-10-15 run
+
+**This records execution evidence, not criterion results.**
+
+### What the run establishes
+
+| Fact | Status |
+|---|---|
+| Execution evidence (13 prompts, 105.4 s) | Verified — see §Post-C1 benchmark evidence |
+| Process exit code 0, 13/13 completed | Verified |
+| Latency figures | Recorded, **monitor-contaminated**; not clean model latency |
+| Historical latencies in this file | **Unchanged** by this specification |
+
+### What it does not establish
+
+**Behavioural evaluation against the criteria above: `Not assessed` for all 13
+prompts.** Two independent reasons:
+
+1. **Retroactivity.** These criteria were written 2026-10-15, *after* the run
+   they would be applied to. They were not the standard that run was held to.
+2. **Truncated evidence.** Only preview text survives, capped at
+   `bench.py:77` `preview_chars` = 110. Three responses exceed that limit
+   (B-10 = 385 chars, B-08 = 163, B-01 = 122), so whole-response criteria —
+   for example "no decorative persona anywhere in the reply" — cannot be
+   evaluated.
+
+The run's success therefore refers to **exit code and prompt completion only**.
+
+### The one exception
+
+**B-09 was assessed, and it failed.** Its criterion is objective, and the
+confirmation falls inside the retained 110-character preview, which opens:
+
+> `Ya, sebenarnya aku AI loh.`
+
+This was assessed because the evidence is both present and sufficient. It
+confirms the identity-boundary defect recorded in the persona-identity
+diagnostics and is a **pre-existing finding, not a regression**. All other
+criteria remain `Not assessed`.
+
+## Gaps in this specification
+
+| Gap | Status |
+|---|---|
+| Long-conversation category | Documented only; needs runner changes before it can execute |
+| B-07 failure boundary | `Needs review` — no source rule defines disallowed interjections |
+| Behavioural assessment of any run | Not performed; requires full-length outputs, not 110-char previews |
+| Positive long-term recall | **Done 2026-10-15** — STORE / RETRIEVAL / INJECT / ANSWER all pass with a valid negative control (see the section below). Limit: keyword-overlapping query, n=1 |
+
+## Positive long-term recall (AUDIT-004 item #2)
+
+Tested 2026-10-15 in isolation. Full report:
+`%TEMP%\veil-audit\AUDIT004_ITEM2_RECALL_REPORT.md`.
+
+A synthetic fact was stored and recalled through the real pipeline with no
+short-term conversation context present.
+
+| Fixture | Value |
+|---|---|
+| Secret | `MANGGARAI-77` |
+| Store input | `inget ya, kode rahasia ku MANGGARAI-77` |
+| Recall query | `apa kode rahasia ku?` — does **not** contain the secret |
+
+| Stage | Result |
+|---|---|
+| `STORE_PASS` | persisted; verified by a **fresh** `LongTermMemory` re-reading the file, not by the extractor's return value |
+| `RETRIEVAL_PASS` | `get_relevant_facts()` returned `- Kode rahasia ku MANGGARAI-77` |
+| INJECT_PASS | `User facts (from long-term memory):` present in the system prompt; short-term history length **0** at recall time |
+| **ANSWER_PASS** | model replied `"Aku tahu, kode rahasia kamu itu MANGGARAI-77…"` (16.72 s, CPU-only) |
+| CONTROL_VALID | same question with an **empty** store → the model never produced the secret |
+
+The negative control is what makes the result meaningful: the identical prompt
+without the stored fact does not yield the secret, so the recall is attributable
+to long-term memory rather than to guessing.
+
+### Why recall is independent of short-term context
+
+`memory/short_term.py` keeps `self.history` **in memory only**;
+`LongTermMemory` is a JSON file. `get_relevant_facts(query)` accepts a query and
+nothing else and never consults short-term memory.
+
+### Limits
+
+- **n=1** per stage; one generation, one control. No variance estimate.
+- **Favourable query.** Retrieval is keyword-scored with no relevance floor
+  (D-13), and the query shares tokens (`kode`, `rahasia`) with the fact.
+  Paraphrased or semantically distant queries were not tested.
+- Single synthetic token, single turn. Does not establish recall across a long
+  conversation.
+- Temperature 0.7 is unratified (D-2), so exact wording is not reproducible.
+
+This is an **isolated integration test**, not a benchmark row. It is not wired
+into `tools/bench.py` and does not by itself change exit criterion 3.
+
+## References
+
+- Runner and prompt list: `tools/bench.py:22-36`, `tools/bench.py:100-102`
+- Preview cap: `tools/bench.py:77`
+- Short-term window: `memory/short_term.py:7`, `memory/short_term.py:29-30`
+- Character rules: `personality/stella.py`
+- Evaluation axes: `AGENT.md:170-181`
+- Remaining Phase 0 work: `PLAN.md` §Remaining Phase 0 work
