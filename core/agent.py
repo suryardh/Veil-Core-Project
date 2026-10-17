@@ -80,7 +80,7 @@ class VeilAgent:
 
         hist_budget = min(
             config.CTX_BUDGET_HISTORY,
-            max(0, limit - len(sys_block) - len(user_block)),
+            max(0, limit - len(sys_block) - len(user_block) - 1),
         )
         history = self._truncate(self._format_history_as_chat(), hist_budget)
         sep = "\n" if history else ""

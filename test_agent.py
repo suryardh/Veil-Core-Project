@@ -11,6 +11,10 @@ from personality.analyzer import analyze
 from personality.state import StellaState
 from personality.persistence import save_state, load_state, SCHEMA_VERSION
 from personality.conflict import detect_conflict, on_interaction, compute_drift, is_apology
+from personality.prompting import build_prompt
+from personality import stella as identity
+from personality.inactivity import compute_inactivity_context
+from personality.rhythm import compute_rhythm
 from utils.text import _EMOJI_RE
 from tools.state_backup import export_backup, restore_backup, checksum_payload
 from memory.emotional import EmotionalMemory
@@ -304,6 +308,35 @@ try:
     agent.short_memory.add_message("assistant", "ok")
     p3 = agent._assemble_prompt(SYSTEM, "halo lagi")
     test("guard: normal path keeps short history", "pesan-pertama-yang-harus-hilang" in p3)
+
+    # Boundary branch: a realistic-size system prompt makes hist_budget bind,
+    # which the 216-char marker above never reaches (D-5).
+    IM_START = chr(60) + chr(124) + "im_start" + chr(124) + chr(62)
+    IM_END = chr(60) + chr(124) + "im_end" + chr(124) + chr(62)
+    REAL_SYSTEM = build_prompt(
+        f"{identity.BASE_IDENTITY}\n\n{identity.LANGUAGE_RULES}\n\n"
+        f"{identity.BEHAVIOR_RULES}\n\n{identity.EXAMPLES}",
+        StellaState(), "\n".join("- " + "x" * 40 + " [positif]" for _ in range(5)),
+        compute_inactivity_context(StellaState(), 0.0),
+        compute_rhythm(StellaState(), analyze("halo")),
+        user_constraints=["ONE short warm reply.", "Do NOT ask a question."],
+        user_facts="\n".join(f"- fact{i} a remembered detail" for i in range(10)))
+
+    for i in range(16):
+        agent.short_memory.add_message(
+            "user" if i % 2 == 0 else "assistant",
+            ("kalimat contoh percakapan bahasa indonesia " * 7)[:500] + f" [{i}]")
+
+    p4 = agent._assemble_prompt(REAL_SYSTEM, "A" * 30000)
+    test("guard: boundary branch stays within hard limit",
+         len(p4) <= config.CTX_PROMPT_CHAR_LIMIT,
+         f"got {len(p4)} > {config.CTX_PROMPT_CHAR_LIMIT} "
+         f"(system {len(REAL_SYSTEM)} chars)")
+    test("guard: boundary branch keeps system block",
+         p4.startswith(f"{IM_START}system\n{REAL_SYSTEM}{IM_END}\n"))
+    test("guard: boundary branch actually binds budget",
+         config.CTX_BUDGET_HISTORY > config.CTX_PROMPT_CHAR_LIMIT
+         - len(REAL_SYSTEM) - 9 - (config.CTX_PROMPT_CHAR_LIMIT // 2) - 11)
 finally:
     pass
 
