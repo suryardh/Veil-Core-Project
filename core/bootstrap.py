@@ -24,7 +24,7 @@ def _configure_stdout():
 def _build_agent() -> VeilAgent:
     if not os.path.exists(config.MODEL_PATH):
         log.error("Model file not found: %s", config.MODEL_PATH)
-        log.error("Download Qwen2.5-3B-Instruct Q4_K_M GGUF and place it at %s", config.MODEL_PATH)
+        log.error("Download %s and place it at %s", os.path.basename(config.MODEL_PATH), config.MODEL_PATH)
         sys.exit(1)
     return VeilAgent(config.MODEL_PATH)
 
