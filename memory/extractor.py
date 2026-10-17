@@ -4,10 +4,29 @@ FRAME_PATTERNS = [
     re.compile(r"^(?:tolong\s+)?(?:ingat|ingatkan|catat|simpan|jangan\s+lupa)\s+(?:kalau|bahwa|ya)\s+", re.I),
     re.compile(r"^(?:tolong\s+)?remember\s+(?:that|to|)\s+", re.I),
     re.compile(r"^(?:tolong\s+)?(?:catat|simpan|note)\s+(?:kalau|bahwa|ya|that)\s+", re.I),
-    re.compile(r"^ingat(?:kan)?\s+", re.I),
-    re.compile(r"^inget(?:kan)?\s+", re.I),
+    # "ingat"/"inget" are ambiguous in Indonesian: they mean both "remember
+    # (store) this" and "do you recall". Requiring the same particle as line 1
+    # ("ya/bahwa/kalau") keeps explicit save commands working while stopping
+    # recall questions like "inget ga kemarin kita bahas apa?" from being
+    # stored as facts.
+    re.compile(r"^ingat(?:kan)?\s+(?:ya|bahwa|kalau)\s*[,:]?\s+", re.I),
+    re.compile(r"^inget(?:kan)?\s+(?:ya|bahwa|kalau)\s*[,:]?\s+", re.I),
     re.compile(r"^remember\s+", re.I),
 ]
+
+# A stored fact is an assertion, not a question. Anything phrased as a question
+# is a request to recall, never something worth persisting.
+_QUESTION_LEAD = re.compile(
+    r"^(apa|apakah|kenapa|mengapa|gimana|bagai\w*|kapan|dimana|di\s*mana|siapa"
+    r"|berapa|mana|what|when|where|who|why|how|which"
+    r"|do\s+you|did\s+you|can\s+you|remember\s+(?:what|whether|if|how|why))\b",
+    re.I,
+)
+_QUESTION_TAIL = re.compile(r"[?？]\s*$")
+
+
+def _looks_like_question(text: str) -> bool:
+    return bool(_QUESTION_TAIL.search(text) or _QUESTION_LEAD.match(text))
 
 IMPORTANCE_KEYWORDS = {
     4: [
@@ -75,9 +94,12 @@ def compute_importance(text: str) -> int:
 def extract_fact(text: str) -> dict:
     seeded = any(p.search(text) for p in FRAME_PATTERNS)
     content = strip_framing(text)
-    if not content:
+    # Reject degenerate or question-shaped content. Previously an input like
+    # "inget ya," was persisted verbatim as a fact, because the empty-content
+    # branch returned the original text while still reporting seeded=True.
+    if not content or _looks_like_question(content):
         return {"type": "general", "content": text, "importance": 1,
-                "tags": ["general"], "seeded": seeded}
+                "tags": ["general"], "seeded": False}
     ftype = classify_type(content)
     return {
         "type": ftype,

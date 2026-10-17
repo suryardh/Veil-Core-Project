@@ -82,6 +82,10 @@ def main():
 
     print(f"Loading {config.MODEL_PATH} ...")
     agent, orch, core = create_core_components()
+    # Measure the real model, not canned 1-token reactions: try_reaction()
+    # returns a template without ever calling the LLM, which skews latency and
+    # hides response quality. Matches tools/sim_live.py and tools/daily_eval.py.
+    core.reactions_enabled = False
 
     ram_loaded = _working_set_bytes()
     vram_loaded = _vram_used_mb()

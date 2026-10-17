@@ -181,12 +181,15 @@ class PersonalityCore:
         cflags = self.constraints.observe(user_input)
         constraints = render_constraints(cflags)
 
-        fact = extract_fact(user_input)
-        if fact["seeded"]:
-            self.long_memory.remember(fact["type"], fact["content"], fact["importance"])
+        # Recall BEFORE persisting. Writing first fed the current message's own
+        # extraction back into its own prompt as an established prior fact.
         user_facts = self.long_memory.get_relevant_facts(user_input)
         if user_facts.startswith("Belum ada"):
             user_facts = ""
+
+        fact = extract_fact(user_input)
+        if fact["seeded"]:
+            self.long_memory.remember(fact["type"], fact["content"], fact["importance"])
 
         system = build_prompt(self._identity_blob(), self.state, emotional_summary,
                               inactivity_ctx, rhythm, user_constraints=constraints,
