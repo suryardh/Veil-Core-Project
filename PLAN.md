@@ -6,22 +6,24 @@
 >
 > **Current roadmap status:** Phase 0 — Repository Audit is the active priority. Existing roadmap phases remain preserved, but work that changes models or architecture should wait until the audit exit criteria are met.
 >
-> **Phase 0 status as of 2026-10-15: INCOMPLETE.** Of the seven Phase 0 exit
+> **Phase 0 status as of 2026-10-18: INCOMPLETE.** Of the seven Phase 0 exit
 > criteria, six are **met** and one is **not met** (#3, AUDIT-004). A post-C1
 > behavioural benchmark was executed successfully (13/13 prompts, process exit
 > code 0, 105.4 s, `VEIL_TEMP=0.7`, CPU-only). Per-prompt expected behaviour
 > (AUDIT-004 #1) and a positive long-term recall test (AUDIT-004 #2) are both
 > complete. **AUDIT-004 remains not met** for two reasons: the long-conversation
 > category is documented but not implemented in the runner, and no run has been
-> scored against the B-01…B-13 criteria because `tools/bench.py` discards full
-> responses. Phase 0 is **not** closed.
+> scored against the B-01…B-13 criteria. The AUDIT-006 `--output` capture that
+> makes full responses recoverable is now **implemented, tested and committed
+> locally** (`79ee4f1`, not pushed); it removes that scoring blocker but has not
+> itself been exercised on a model run. Phase 0 is **not** closed.
 > See [Discrepancy register](#discrepancy-register-phase-0),
 > [Post-C1 benchmark evidence](#post-c1-benchmark-evidence) and
 > [AUDIT-006](#audit-006--smallest-safe-next-change-decided-2026-10-15).
 >
-> Four local commits (D-1, D-4/D-5 and the C1/C2 regression runners) are recorded
-> in [Change Log](#change-log). `prototypev1` is **not pushed**: `origin/prototypev1`
-> is still at `667022c`.
+> Six local commits (D-1, D-4/D-5, the C1/C2 regression runners, the Phase 0 docs
+> pass, and the AUDIT-006 capture) are recorded in [Change Log](#change-log).
+> `prototypev1` is **not pushed**: `origin/prototypev1` is still at `667022c`.
 
 ---
 
@@ -164,9 +166,10 @@ Review at minimum:
 
 > The two boxed items are answered by [AUDIT-006 decision record](#audit-006--smallest-safe-next-change-decided-2026-10-15),
 > which records the smallest safe next change and its `git revert` rollback
-> procedure. **That record is a decision only — the proposed `tools/bench.py`
-> `--output` capture is not implemented**, and its implementation needs separate
-> authorization. The remaining items above are still genuinely open.
+> procedure. **The proposed `tools/bench.py` `--output` capture is now
+> implemented, tested and committed locally** (`79ee4f1`, not pushed); the
+> decision record itself remains a decision document, and implementation was
+> authorized separately. The remaining items above are still genuinely open.
 
 ## Phase 0 Exit Criteria
 
@@ -188,7 +191,7 @@ Phase 0 is complete when:
 |---|---|---|---|
 | 1 | Model/runtime configuration verified | **MET** | measured at runtime: 7B, `N_CTX=4096`, `CTX_PROMPT_CHAR_LIMIT=14528`, effective temp **0.7** (see D-2) |
 | 2 | Request-lifecycle diagram | **MET** | `README.md` Architecture section; traced through `personality/core.py` → `core/agent.py` → `llm/engine.py` |
-| 3 | Tests + behavior benchmark recorded | **NOT MET** | 141 deterministic assertions pass in the isolated verification run; `tools/bench.py` **has now been executed** on the current 7B model — post-C1 run 2026-10-15, 13/13 prompts, exit code 0 (see [Post-C1 benchmark evidence](#post-c1-benchmark-evidence)). Expected behaviour for all 13 prompts is now specified (`BASELINE.md` §Benchmark specification), but the long-conversation category is documented-not-implemented and **no run has been assessed against the criteria** — retained outputs are 110-char previews only |
+| 3 | Tests + behavior benchmark recorded | **NOT MET** | 141 deterministic assertions pass in the isolated verification run; `tools/bench.py` **has now been executed** on the current 7B model — post-C1 run 2026-10-15, 13/13 prompts, exit code 0 (see [Post-C1 benchmark evidence](#post-c1-benchmark-evidence)). Expected behaviour for all 13 prompts is now specified (`BASELINE.md` §Benchmark specification). The long-conversation category is still documented-not-implemented, and **no run has been assessed against the criteria**; the pre-existing run retained 110-char previews only. The AUDIT-006 `--output` capture (`79ee4f1`) now makes full responses recoverable, but that capability has not yet been used on a run |
 | 4 | Backup/restore path verified | **MET** | checksummed envelope, tamper + future-schema rejection, v2→v3 migration — covered by the suite |
 | 5 | Module dispositions | **MET** | `README.md` structure + `AGENT.md` §Discrepancies |
 | 6 | Conflicts recorded | **MET** | this section |
@@ -215,7 +218,7 @@ Phase 0 is complete when:
 **Merged: D-3 (`e827a8e`), D-9 (`b53eafc`). Committed on `prototypev1`: D-1
 (`72321f8`), D-4 and D-5 (`b2e6517`). Resolved in this documentation pass: D-11.
 Open: D-2, D-6, D-7, D-8, D-10, D-12, D-13.**
-D-1/D-4/D-5 are committed on `prototypev1` at HEAD `5a424db`, but `prototypev1` is
+D-1/D-4/D-5 are committed on `prototypev1` at HEAD `79ee4f1`, but `prototypev1` is
 **not yet pushed**: `origin/prototypev1` is still at `667022c`.
 The architectural requirements in `AGENT.md` and `DESIGN.md` stand as written;
 D-6 and D-7 are recorded gaps between requirement and implementation, not licence
@@ -451,11 +454,14 @@ Phase 0 cannot close until these are done. Ordered by dependency:
 3. **D-2 temperature decision** — `PLAN.md` §Phase 1 requires this resolved
    *before* a behavioural baseline is treated as authoritative. The 0.7 used
    above is unratified.
-4. **AUDIT-006** — **decided 2026-10-15.** The smallest safe next change is to
-   persist full responses from `tools/bench.py` to a gitignored path; see
+4. **AUDIT-006** — **decided 2026-10-15, implemented 2026-10-18.** The smallest
+   safe next change — persisting full responses from `tools/bench.py` to a
+   gitignored path — is now **implemented, tested and committed locally**
+   (`79ee4f1`, not pushed); see
    [AUDIT-006](#audit-006--smallest-safe-next-change-decided-2026-10-15) for the
-   decision and rollback plan. Implementation is **not** authorized by that
-   decision — it needs its own go-ahead.
+   decision and rollback plan. This removes the "full responses discarded"
+   blocker for scoring, but **exit criterion 3 stays NOT MET** until an
+   authorized model run is scored against B-01…B-13.
 5. **D-8** — needs `tools/ctx_report.py` against the GGUF; blocked on a model
    load that has not been authorized.
 6. **D-12 / D-13** — product decisions, Phase 5.
@@ -1142,8 +1148,8 @@ Do not skip ahead. The first goal is to establish the actual repository state wi
 
 ### Local commits ahead of origin (not pushed)
 
-Recorded 2026-10-17. These exist only on the local `prototypev1` branch; `origin/prototypev1`
-is at `667022c`.
+Updated 2026-10-18. Six commits exist only on the local `prototypev1` branch;
+`origin/prototypev1` is at `667022c`. None has been pushed.
 
 | Commit | Scope | Message |
 |---|---|---|
@@ -1151,12 +1157,26 @@ is at `667022c`.
 | `b2e65179e6c09e3c5f55e7ac04998610d329290e` | `core/agent.py`, `test_agent.py` | `fix: reserve separator character in prompt budget` (D-4, D-5) |
 | `1a8170bf85e6f56ec4d3c36fb63c0158957d3cbb` | `test_bench_reaction_guard.py` | `test: strengthen bench reaction guard regression test` (C1) |
 | `5a424db3bca1b06c82cc93b65bd72de39f0b9f43` | `test_memory_extraction_guard.py` | `test: add memory extraction regression guards` (C2) |
+| `6d84cc113604f66c64e45fa28cc6fa074c38c781` | `PLAN.md`, `BASELINE.md`, `README.md`, `AGENT.md` | `docs: record Phase 0 audit progress and regression guards` |
+| `79ee4f1d740572dc99727fa2e26a6e0a81e41701` | `tools/bench.py`, `test_bench_output_guard.py` | `feat: add guarded JSONL output to benchmark tool` (AUDIT-006) |
 
-None of these changes Phase 0 or Phase 1 status. D-2, D-8, D-10 and AUDIT-006 remain
-unresolved.
+None of these changes Phase 0 or Phase 1 status. D-2, D-8 and D-10 remain
+unresolved; AUDIT-006 is now implemented and committed locally (the `79ee4f1`
+entry above), but that does not lift exit criterion 3, which stays **NOT MET**.
 
 ## Change Log
 
+- **2026-10-18 — feat (`79ee4f1`):** implemented the AUDIT-006 capture. `tools/bench.py`
+  gains an optional `--output PATH` that appends one UTF-8 JSONL record per prompt — a
+  header plus the **full, untruncated** response with category, latency and char count.
+  Additive and stdout-identical when `--output` is absent; nothing imports the runner.
+  Guarded against path traversal, protected directories, symlink destinations and
+  overwriting an existing file; writes only under the gitignored `tmp/`/`temp/`. A
+  failure during serialization, flush, close or finalization now yields a non-zero exit
+  and no success message. New `test_bench_output_guard.py` guards it (84 passed, 1
+  skipped). Committed locally; `prototypev1` still unpushed. Measurements and the
+  residual Windows TOCTOU limitation are recorded in
+  `BASELINE.md` §"JSONL output capture (AUDIT-006)".
 - **2026-10-17 — test (`1a8170b`, `5a424db`):** added two regression runners for defects
   found during the Phase B benchmark investigation. `test_bench_reaction_guard.py`
   (15 assertions) pins the `reactions_enabled = False` guard in `tools/bench.py`; it

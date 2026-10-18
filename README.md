@@ -26,6 +26,11 @@ beyond an agent with personality
 > expected behaviour per prompt, and a positive long-term-memory recall test. See
 > `BASELINE.md`.
 >
+> The AUDIT-006 full-response capture (`tools/bench.py --output`) is now
+> implemented and committed locally (not pushed), so a future run can be scored
+> against B-01…B-13; no such run has been made yet, and it does not change the
+> AUDIT-004 status above.
+>
 > Implemented ≠ verified. The deterministic test suite passes **141** assertions;
 > the 3 LLM-dependent end-to-end assertions have not been run in the audit.
 >
@@ -426,6 +431,13 @@ effects, so pytest collection runs nothing. **pytest is not installed in this
 environment and `--collect-only` has not been run** — import safety was
 verified by importing the modules directly, and the 15/15 and 33/33 results come
 from manual invocation.
+
+A third Phase 0 runner, `test_bench_output_guard.py`, guards the AUDIT-006
+`--output` JSONL capture added to `tools/bench.py` — **84 assertions pass, 1
+skipped** (the OS refused native symlink creation, so that branch is covered with
+faked `os.path.islink` probes instead). It too is an explicit runner, blocks
+`llama_cpp`, sandboxes to `%TEMP%`, runs no inference, and does not evaluate any
+B-01…B-13 criterion.
 
 `tools/bench.py` (13 fixed prompts, baseline comparison) requires the GGUF. It
 **was executed against the current 7B model on 2026-10-15** — 13/13 prompts,

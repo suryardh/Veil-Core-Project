@@ -419,9 +419,45 @@ criteria remain `Not assessed`.
 |---|---|
 | Long-conversation category | Documented only; needs runner changes before it can execute |
 | B-07 failure boundary | `Needs review` — no source rule defines disallowed interjections |
-| Behavioural assessment of any run | Not performed; requires full-length outputs, not 110-char previews |
+| Behavioural assessment of any run | Not performed; requires full-length outputs, not 110-char previews. A full-response capture path now exists (`tools/bench.py --output`, AUDIT-006) but no run has been scored |
 | Positive long-term recall | **Done 2026-10-15** — STORE / RETRIEVAL / INJECT / ANSWER all pass with a valid negative control (see the section below). Limit: keyword-overlapping query, n=1 |
 | Automated coverage of the B-01…B-13 criteria | **None.** `test_bench_reaction_guard.py` and `test_memory_extraction_guard.py` (added 2026-10-17) cover two specific Phase B defects; they do not evaluate any B-criterion |
+
+## JSONL output capture (AUDIT-006)
+
+Implemented and committed locally 2026-10-18 (`79ee4f1`; `prototypev1` not pushed).
+`tools/bench.py` gained an optional `--output PATH` flag that appends one JSONL
+record per prompt — a header plus the **full, untruncated** response with
+category, latency and char count. This makes a future run scorable against
+B-01…B-13, but it is a **capability, not a result**: no model run has been
+executed with `--output`, so AUDIT-004 remains incomplete and exit criterion 3
+remains **NOT MET**.
+
+- Default behaviour is unchanged: without `--output` the runner prints to stdout
+  exactly as before and writes no file.
+- Output must be a file directly inside the gitignored `tmp/`/`temp/`; `logs/`,
+  `data/`, `memory/`, `models/`, traversal and symlinked destinations are
+  refused, and an existing file is never overwritten.
+- **Residual limitation (Windows).** The containment/symlink re-check placed
+  between path validation and file creation cannot fully close a concurrent
+  TOCTOU race, because `open()` on this platform offers no
+  `O_NOFOLLOW`/handle-relative creation. The window is narrowed, not eliminated.
+  This is documented in the code and is **not** a claim of full safety.
+
+### Verified test results (2026-10-18)
+
+| Runner | Result |
+|---|---|
+| `test_bench_output_guard.py` | **84 passed, 1 skipped**, exit 0 |
+| `test_bench_reaction_guard.py` | **C1 15/15 passed**, exit 0 |
+
+Both are stub-based explicit runners: they block `llama_cpp` (no GGUF, no
+inference, no network) and sandbox to `%TEMP%`. The single skip is the **native
+symlink** case — the OS refused `os.symlink` (no Developer Mode), so native
+symlink behaviour was **not** tested; the same rejection branches are covered by
+faked `os.path.islink` probes instead. These results verify the capture guard
+only; they are **not** completion of AUDIT-004 and involve no real model
+inference.
 
 ## Positive long-term recall (AUDIT-004 item #2)
 
