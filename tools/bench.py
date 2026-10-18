@@ -8,12 +8,14 @@ markdown report (per-prompt latency, response preview, RAM/VRAM footprint).
 Back up state.json before running: python tools/state_backup.py export
 """
 import argparse
+import json
 import os
 import subprocess
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _REPO_ROOT)
 
 import config
 from core.bootstrap import create_core_components
@@ -72,9 +74,121 @@ def _vram_used_mb():
         return None
 
 
+APPROVED_OUTPUT_DIRS = ("tmp", "temp")
+PROTECTED_OUTPUT_DIRS = ("logs", "data", "memory", "models")
+
+
+class OutputPathError(Exception):
+    """Raised when --output names a destination that must not be written."""
+
+
+def _gitignore_covers_dirname(root):
+    """True only when the repo .gitignore explicitly lists "<name>/".
+
+    Deliberately exact-match and fail-closed: if .gitignore ever stops covering
+    an approved directory, capture is refused rather than risking a tracked
+    artefact holding full model responses."""
+    try:
+        with open(os.path.join(_REPO_ROOT, ".gitignore"), encoding="utf-8") as fh:
+            entries = {line.strip() for line in fh}
+    except OSError:
+        return False
+    return (os.path.basename(root) + "/") in entries
+
+
+def _approved_output_roots():
+    """[(name, realpath)] for tmp//temp/ that are plain paths covered by .gitignore.
+
+    The directory need not exist yet: it is created by the caller when missing.
+    A pre-existing symlink at that name disqualifies the whole entry, so the
+    caller can never end up writing through one."""
+    roots = []
+    for name in APPROVED_OUTPUT_DIRS:
+        candidate = os.path.join(_REPO_ROOT, name)
+        if os.path.islink(candidate):
+            continue
+        if not _gitignore_covers_dirname(candidate):
+            continue
+        roots.append((name, os.path.realpath(candidate)))
+    return roots
+
+
+def resolve_output_path(raw):
+    """Validate --output and return (absolute_real_path, approved_root).
+
+    Rejects: empty paths, destinations outside the approved roots (which also
+    covers ../ traversal, since realpath collapses it first), any destination
+    that is itself a symlink, and the protected logs//data//memory//models/
+    trees. Raises OutputPathError with a human-readable reason."""
+    if not raw or not raw.strip():
+        raise OutputPathError("--output requires a path")
+
+    candidate = raw if os.path.isabs(raw) else os.path.join(_REPO_ROOT, raw)
+    if os.path.islink(candidate):
+        raise OutputPathError("refusing to write through a symlink: %s" % raw)
+
+    real = os.path.realpath(candidate)
+
+    for protected in PROTECTED_OUTPUT_DIRS:
+        prot = os.path.realpath(os.path.join(_REPO_ROOT, protected))
+        if real == prot or real.startswith(prot + os.sep):
+            raise OutputPathError(
+                "refusing to write into the protected directory %s/" % protected)
+
+    roots = _approved_output_roots()
+    if not roots:
+        raise OutputPathError(
+            "no approved git-ignored output directory exists (expected %s/ or %s/)"
+            % (APPROVED_OUTPUT_DIRS[0], APPROVED_OUTPUT_DIRS[1]))
+
+    for name, root in roots:
+        if real == root or real.startswith(root + os.sep):
+            return real, root
+
+    raise OutputPathError(
+        "--output must be a file directly inside %s; got: %s"
+        % (" or ".join("%s/" % n for n, _ in roots), raw))
+
+
+def _recheck_output_target(out_path, out_root):
+    """Re-run containment/symlink checks immediately before creating the file.
+
+    resolve_output_path() validates the destination, but directory creation and
+    the exclusive open happen afterwards, leaving a window where the approved
+    root could be swapped. This re-check narrows that window; it does NOT close
+    it. Python's open() on this platform offers no O_NOFOLLOW / handle-relative
+    creation, so a concurrent swap of the approved root for a reparse point in
+    the microseconds between this check and open() could still redirect the
+    write. Eliminating that needs a CreateFileW + reparse-tag-verification path,
+    out of scope here. Never claim a second realpath() removes a concurrent
+    filesystem race."""
+    if os.path.islink(out_path):
+        raise OutputPathError("refusing to write through a symlink: %s" % out_path)
+    if os.path.islink(out_root):
+        raise OutputPathError("approved output root became a symlink: %s" % out_root)
+    parent_real = os.path.realpath(os.path.dirname(out_path))
+    if os.path.normcase(parent_real) != os.path.normcase(out_root):
+        raise OutputPathError(
+            "output directory changed since validation: %s" % out_path)
+    return out_path
+
+
+def _emit(fh, record):
+    """Write one JSONL record and flush so a crash cannot lose it."""
+    fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    fh.flush()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--preview-chars", type=int, default=110)
+    parser.add_argument("--output", default=None,
+                        help="Optional. Write a UTF-8 JSONL capture of every full "
+                             "prompt/response pair to PATH, which must be a file "
+                             "directly inside the git-ignored tmp/ or temp/ "
+                             "directory. Existing files are never overwritten. "
+                             "Output may contain sensitive model text; treat it "
+                             "as confidential.")
     args = parser.parse_args()
 
     ram_before = _working_set_bytes()
@@ -95,16 +209,127 @@ def main():
     core.handle("halo")
     print(f"Warmup done in {time.perf_counter() - t0:.1f}s (excluded from stats)\n")
 
+    out_fh = None
+    out_path = None
+    written = 0
+    if args.output is not None:
+        try:
+            out_path, out_root = resolve_output_path(args.output)
+        except OutputPathError as exc:
+            print("bench: error: %s" % exc, file=sys.stderr)
+            sys.exit(2)
+        if os.path.dirname(out_path) != out_root:
+            print("bench: error: --output must be directly inside %s/, not a "
+                  "subdirectory" % os.path.basename(out_root), file=sys.stderr)
+            sys.exit(2)
+        try:
+            os.makedirs(out_root, exist_ok=True)
+        except OSError as exc:
+            print("bench: error: cannot create %s: %s" % (out_root, exc),
+                  file=sys.stderr)
+            sys.exit(2)
+        try:
+            _recheck_output_target(out_path, out_root)
+        except OutputPathError as exc:
+            print("bench: error: %s" % exc, file=sys.stderr)
+            sys.exit(2)
+        try:
+            out_fh = open(out_path, "x", encoding="utf-8", newline="\n")
+        except FileExistsError:
+            print("bench: error: refusing to overwrite existing file: %s" % out_path,
+                  file=sys.stderr)
+            sys.exit(3)
+        except OSError as exc:
+            print("bench: error: cannot open %s: %s" % (out_path, exc),
+                  file=sys.stderr)
+            sys.exit(2)
+        try:
+            _emit(out_fh, {
+                "record": "header",
+                "version": 1,
+                "format": "jsonl",
+                "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                "model_file": os.path.basename(config.MODEL_PATH),
+                "n_ctx": config.N_CTX,
+                "sampling": config.SAMPLING,
+                "max_tokens": config.MAX_TOKENS,
+                "prompt_char_limit": config.CTX_PROMPT_CHAR_LIMIT,
+                "preview_chars": args.preview_chars,
+                "prompt_count": len(PROMPTS),
+            })
+        except OSError as exc:
+            print("bench: error: cannot write header to %s: %s" % (out_path, exc),
+                  file=sys.stderr)
+            try:
+                out_fh.close()
+            except OSError:
+                pass
+            out_fh = None
+            try:
+                os.unlink(out_path)
+            except OSError as unlink_exc:
+                print("bench: note: could not remove partial %s: %s"
+                      % (out_path, unlink_exc), file=sys.stderr)
+            sys.exit(2)
+
     rows = []
     latencies = []
-    for category, prompt in PROMPTS:
-        t0 = time.perf_counter()
-        response = core.handle(prompt)
-        dt = time.perf_counter() - t0
-        latencies.append(dt)
-        preview = " ".join(response.split())[: args.preview_chars]
-        rows.append((category, prompt, dt, len(response), preview))
-        print(f"[{dt:6.2f}s] ({category}) {prompt}")
+    run_error = None
+    try:
+        for category, prompt in PROMPTS:
+            t0 = time.perf_counter()
+            response = core.handle(prompt)
+            dt = time.perf_counter() - t0
+            latencies.append(dt)
+            preview = " ".join(response.split())[: args.preview_chars]
+            rows.append((category, prompt, dt, len(response), preview))
+            if out_fh is not None:
+                try:
+                    _emit(out_fh, {
+                        "record": "response",
+                        "i": len(rows),
+                        "category": category,
+                        "prompt": prompt,
+                        "latency_s": round(dt, 3),
+                        "chars": len(response),
+                        "response": response,
+                    })
+                except OSError as exc:
+                    print("bench: error: write failed after %d prompt record(s): %s"
+                          % (written, exc), file=sys.stderr)
+                    sys.exit(4)
+                written += 1
+            print(f"[{dt:6.2f}s] ({category}) {prompt}")
+    except SystemExit as exc:
+        if run_error is None:
+            run_error = exc
+        raise
+    except BaseException as exc:
+        # Without a capture file there is nothing to finalize, so preserve the
+        # pre-capture behaviour: let the original exception/traceback propagate.
+        if args.output is None:
+            raise
+        print("bench: error: run aborted after %d prompt record(s) written to %s: %s"
+              % (written, out_path, exc), file=sys.stderr)
+        run_error = exc
+        sys.exit(5)
+    finally:
+        if out_fh is not None:
+            try:
+                out_fh.close()
+            except OSError as exc:
+                # A close failure must never be reported as success. If a run
+                # error already exists, keep it as the primary cause; otherwise
+                # this is the failure and the run must not exit zero.
+                print("bench: error: cannot finalize capture %s: %s"
+                      % (out_path, exc), file=sys.stderr)
+                if run_error is None:
+                    sys.exit(6)
+            finally:
+                out_fh = None
+
+    if args.output is not None:
+        print("\n**Capture:** %d prompt record(s) written to %s" % (written, out_path))
 
     n = len(latencies)
     avg = sum(latencies) / n
