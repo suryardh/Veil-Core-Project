@@ -37,6 +37,23 @@ PROMPTS = [
     ("tool_calc", "berapa 12*7?"),
 ]
 
+# Long-conversation scenarios: ordered turns sharing one session (no reset between
+# turns). Each scenario references prompt indices into PROMPTS above. Turn order
+# is preserved; scenario IDs are stable. The runtime has no reset hook, so
+# independent scenarios still share session state - documented limitation.
+SCENARIOS = [
+    {
+        "id": "S-01",
+        "description": "Casual to recall: tests cross-turn memory honesty",
+        "turns": [0, 2, 3, 7],  # B-01, B-03, B-04, B-08
+    },
+    {
+        "id": "S-02",
+        "description": "Identity and facts: tests register consistency",
+        "turns": [8, 9, 10, 12],  # B-09, B-10, B-11, B-13
+    },
+]
+
 
 def _working_set_bytes():
     import ctypes
@@ -179,6 +196,96 @@ def _emit(fh, record):
     fh.flush()
 
 
+def _describe_error(exc):
+    """Human-readable cause for the run summary. SystemExit carries only a code."""
+    if isinstance(exc, SystemExit):
+        return "interrupted (exit code %s)" % (exc.code,)
+    return "%s: %s" % (type(exc).__name__, exc)
+
+
+def _run_summary(written, prompt_count, latencies, error):
+    """Final JSONL record: was the run complete, and what did it measure?
+
+    `complete` requires every prompt record to have been written AND no error.
+    Aggregates cover exactly the records that were written (latencies is already
+    sliced to that count), so a partial run cannot report statistics for prompts
+    whose output is missing. With zero written records the latencies are null,
+    not 0, so an empty file is never mistaken for a fast run.
+
+    This record is only ever appended **after** the data file has closed
+    successfully (see _append_verified), so a close failure cannot leave a file
+    claiming "complete".
+    """
+    n = len(latencies)
+    return {
+        "record": "run",
+        "version": 1,
+        "status": "complete" if (error is None and written == prompt_count) else "aborted",
+        "prompts_written": written,
+        "prompt_count": prompt_count,
+        "samples": n,
+        "latency_s": {
+            "avg": round(sum(latencies) / n, 3) if n else None,
+            "min": round(min(latencies), 3) if n else None,
+            "max": round(max(latencies), 3) if n else None,
+        },
+        "error": error,
+    }
+
+
+def _capture_identity(fh):
+    """(st_dev, st_ino, st_size) of the open capture, taken after flush.
+
+    Used to prove the file the summary is appended to is still the same file
+    that was just written and closed."""
+    st = os.fstat(fh.fileno())
+    return (st.st_dev, st.st_ino, st.st_size)
+
+
+def _append_verified(path, identity, record):
+    """Append one JSONL line, but only to the exact file that was just closed.
+
+    A buffered text handle cannot be written after close(), so the summary needs
+    a second handle. To keep that from becoming a new hijack vector, the target
+    is re-opened without truncation and its device/inode/size are compared with
+    the values captured from the original handle. Only after they match is a
+    single byte written; a replaced, truncated or otherwise different target is
+    refused *before* the write. O_NOFOLLOW is applied where the platform offers
+    it (Windows does not); there the identity check is the defence, and it runs
+    before any byte is written. A partial write is rolled back with ftruncate.
+    """
+    flags = os.O_WRONLY | os.O_APPEND
+    flags |= getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    started = False
+    try:
+        st = os.fstat(fd)
+        if (st.st_dev, st.st_ino, st.st_size) != tuple(identity):
+            raise OSError("capture file changed since close; refusing to append summary")
+        data = (json.dumps(record, ensure_ascii=False) + "\n").encode("utf-8")
+        view = memoryview(data)
+        started = True
+        while view:
+            view = view[os.write(fd, view):]
+        os.fsync(fd)
+    except BaseException:
+        # Only roll back if a write began. A refusal must leave the target
+        # exactly as it was found.
+        if started:
+            try:
+                os.ftruncate(fd, identity[2])
+            except OSError:
+                pass
+        raise
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            if sys.exc_info()[0] is None:
+                raise
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--preview-chars", type=int, default=110)
@@ -189,7 +296,21 @@ def main():
                              "directory. Existing files are never overwritten. "
                              "Output may contain sensitive model text; treat it "
                              "as confidential.")
+    parser.add_argument("--scenarios", action="store_true", default=False,
+                        help="Run long-conversation scenarios from SCENARIOS "
+                             "instead of the flat 13-prompt list. Backward "
+                             "compatible: default is the flat benchmark.")
     args = parser.parse_args()
+
+    # Build the turn list: flat 13-prompt benchmark (default) or long-conversation scenarios.
+    if args.scenarios:
+        turn_list = []
+        for sc in SCENARIOS:
+            for t_idx, p_idx in enumerate(sc["turns"], 1):
+                cat, prompt = PROMPTS[p_idx]
+                turn_list.append((sc["id"], t_idx, cat, prompt))
+    else:
+        turn_list = [(None, i, cat, prompt) for i, (cat, prompt) in enumerate(PROMPTS, 1)]
 
     ram_before = _working_set_bytes()
     vram_before = _vram_used_mb()
@@ -255,7 +376,8 @@ def main():
                 "max_tokens": config.MAX_TOKENS,
                 "prompt_char_limit": config.CTX_PROMPT_CHAR_LIMIT,
                 "preview_chars": args.preview_chars,
-                "prompt_count": len(PROMPTS),
+                "prompt_count": len(turn_list),
+                "scenarios": len(SCENARIOS) if args.scenarios else 0,
             })
         except OSError as exc:
             print("bench: error: cannot write header to %s: %s" % (out_path, exc),
@@ -275,8 +397,16 @@ def main():
     rows = []
     latencies = []
     run_error = None
+    _prev_scenario = None
     try:
-        for category, prompt in PROMPTS:
+        for scenario_id, turn_idx, category, prompt in turn_list:
+            # Reset session between independent scenarios (isolation).
+            if scenario_id is not None and scenario_id != _prev_scenario and _prev_scenario is not None:
+                try:
+                    core.reset_session()
+                except Exception as exc:
+                    print("bench: warning: reset_session failed: %s" % exc, file=sys.stderr)
+            _prev_scenario = scenario_id
             t0 = time.perf_counter()
             response = core.handle(prompt)
             dt = time.perf_counter() - t0
@@ -288,6 +418,8 @@ def main():
                     _emit(out_fh, {
                         "record": "response",
                         "i": len(rows),
+                        "scenario": scenario_id,
+                        "turn": turn_idx,
                         "category": category,
                         "prompt": prompt,
                         "latency_s": round(dt, 3),
@@ -295,6 +427,7 @@ def main():
                         "response": response,
                     })
                 except OSError as exc:
+                    run_error = "capture write failed: %s" % exc
                     print("bench: error: write failed after %d prompt record(s): %s"
                           % (written, exc), file=sys.stderr)
                     sys.exit(4)
@@ -302,7 +435,7 @@ def main():
             print(f"[{dt:6.2f}s] ({category}) {prompt}")
     except SystemExit as exc:
         if run_error is None:
-            run_error = exc
+            run_error = _describe_error(exc)
         raise
     except BaseException as exc:
         # Without a capture file there is nothing to finalize, so preserve the
@@ -311,22 +444,51 @@ def main():
             raise
         print("bench: error: run aborted after %d prompt record(s) written to %s: %s"
               % (written, out_path, exc), file=sys.stderr)
-        run_error = exc
+        run_error = _describe_error(exc)
         sys.exit(5)
     finally:
         if out_fh is not None:
+            # The summary is the last fact written, and it may claim "complete"
+            # only after closing the data file has succeeded. So flush, record
+            # the file identity, close, then append to that verified file. If
+            # flush or close fails, no summary is written at all: the artifact
+            # must never claim "complete" after a detected finalization failure.
+            identity = None
+            close_error = None
+            try:
+                out_fh.flush()
+                identity = _capture_identity(out_fh)
+            except OSError as exc:
+                print("bench: error: cannot flush capture %s: %s"
+                      % (out_path, exc), file=sys.stderr)
             try:
                 out_fh.close()
             except OSError as exc:
                 # A close failure must never be reported as success. If a run
                 # error already exists, keep it as the primary cause; otherwise
                 # this is the failure and the run must not exit zero.
+                close_error = exc
                 print("bench: error: cannot finalize capture %s: %s"
                       % (out_path, exc), file=sys.stderr)
-                if run_error is None:
-                    sys.exit(6)
             finally:
                 out_fh = None
+
+            if identity is None or close_error is not None:
+                if run_error is None:
+                    sys.exit(6)
+            else:
+                try:
+                    _append_verified(out_path, identity, _run_summary(
+                        written=written,
+                        prompt_count=len(turn_list),
+                        latencies=latencies[:written],
+                        error=run_error,
+                    ))
+                except OSError as exc:
+                    print("bench: error: cannot write run summary to %s: %s"
+                          % (out_path, exc), file=sys.stderr)
+                    if run_error is None:
+                        sys.exit(6)
 
     if args.output is not None:
         print("\n**Capture:** %d prompt record(s) written to %s" % (written, out_path))

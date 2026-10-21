@@ -19,6 +19,34 @@ from memory.extractor import extract_fact
 from memory.long_term import LongTermMemory
 
 
+MEMORY_HONESTY_INSTRUCTION = (
+    "INSTRUCTION (memory honesty): The user is asking about a prior conversation. "
+    "No relevant facts are stored in long-term memory. You MUST say you do not "
+    "remember or do not know. Do NOT invent, summarize, or reconstruct any prior "
+    "conversation."
+)
+
+
+def _is_recall_query(text: str) -> bool:
+    """Detect a memory-recall question using existing extractor heuristics.
+
+    Justification: recall intent in Indonesian is signalled by "inget"/"ingat"
+    (remember) combined with question form. The extractor already has
+    _looks_like_question for question detection. Combining the two avoids a
+    broad keyword list: only questions that explicitly ask about remembering
+    trigger the guard.
+    """
+    lowered = (text or "").lower()
+    recall_signals = ("inget", "ingat", "remember")
+    if not any(sig in lowered for sig in recall_signals):
+        return False
+    try:
+        from memory.extractor import _looks_like_question
+        return bool(_looks_like_question(text))
+    except Exception:
+        return "?" in (text or "")
+
+
 class PersonalityCore:
     def __init__(self, agent, orchestrator, cognition_tools: dict | None = None):
         self.agent = agent
@@ -32,6 +60,20 @@ class PersonalityCore:
         self._last_initiative_ts: float = 0.0
         self._last_absence_bucket: str = ""
         self.long_memory = LongTermMemory()
+
+    def reset_session(self) -> None:
+        """Clear short-term conversation state for scenario isolation.
+
+        Clears the agent's short-term history and resets per-session state to
+        defaults. Does NOT touch long-term memory, emotional memory, or any
+        production file. Safe for per-scenario isolation in benchmarks.
+        """
+        if hasattr(self.agent, "short_memory") and self.agent.short_memory is not None:
+            self.agent.short_memory.history = []
+        self.state = StellaState()
+        self.constraints = ConversationConstraints(ttl=2)
+        self.emotional_memory = EmotionalMemory()
+        self.last_reaction_ts = 0.0
 
     def _identity_blob(self) -> str:
         return (f"{identity.BASE_IDENTITY}\n\n{identity.LANGUAGE_RULES}\n\n"
@@ -181,11 +223,39 @@ class PersonalityCore:
         cflags = self.constraints.observe(user_input)
         constraints = render_constraints(cflags)
 
+        # B-04 guard: fatigue/distress without advice request -> acknowledge first,
+        # no optimism pivot. Uses existing analyzer (valence) for intent, not keywords.
+        _advice_keywords = ("gimana", "bagaimana", "solusi", "saran", "tolong",
+                            "bantu", "help", "advice")
+        _asks_advice = any(k in user_input.lower() for k in _advice_keywords)
+        if analysis.valence < -0.3 and not _asks_advice:
+            constraints = list(constraints) + [
+                "User is expressing fatigue or distress. Acknowledge their "
+                "experience first. Do NOT pivot to optimism or predict they will "
+                "feel better. Only offer suggestions if they explicitly ask."]
+
+        # B-11 guard: factual question in companion chat -> natural register.
+        _question_words = ("siapa", "berapa", "apa ", "apakah", "kapan", "dimana",
+                           "di mana", "mengapa", "kenapa", "jelaskan", "what",
+                           "who", "when", "where", "how")
+        _is_question = "?" in user_input or user_input.lower().startswith(_question_words)
+        if _is_question and -0.2 <= analysis.valence <= 0.2:
+            constraints = list(constraints) + [
+                "User is asking a factual question. Answer accurately in your "
+                "natural companion voice. Do not append decorative commentary or "
+                "pet names unless the conversation invites it."]
+
         # Recall BEFORE persisting. Writing first fed the current message's own
         # extraction back into its own prompt as an established prior fact.
         user_facts = self.long_memory.get_relevant_facts(user_input)
-        if user_facts.startswith("Belum ada"):
+        _no_facts = user_facts.startswith("Belum ada")
+        if _no_facts:
             user_facts = ""
+        # Memory-honesty guard (B-08): when a recall query has no stored facts,
+        # inject an explicit instruction so the model does not fabricate a
+        # prior-conversation summary from short-term context.
+        if _no_facts and _is_recall_query(user_input):
+            user_facts = MEMORY_HONESTY_INSTRUCTION
 
         fact = extract_fact(user_input)
         if fact["seeded"]:

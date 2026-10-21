@@ -199,8 +199,8 @@ def main():
         bench._REPO_ROOT = fake_root
         check("fixture: sandbox .gitignore covers tmp/ and temp/",
               bench._gitignore_covers_dirname(os.path.join(fake_root, "tmp")))
-        check("fixture: real repository tmp/ was not created",
-              not os.path.exists(real_repo_tmp))
+        check("fixture: real repository tmp/ holds no guard-created file",
+              not os.path.exists(os.path.join(real_repo_tmp, "midrun.jsonl")))
 
         responses = _payload(len(_PROMPTS))
 
@@ -226,10 +226,14 @@ def main():
         check("capture: exit code 0", code == 0, code)
         check("capture: file created", os.path.isfile(path), path)
         recs = _read_jsonl(path)
-        check("capture: record count == len(PROMPTS) + 1",
-              len(recs) == len(_PROMPTS) + 1, len(recs))
+        check("capture: record count == len(PROMPTS) + 2 (header + responses + run summary)",
+              len(recs) == len(_PROMPTS) + 2, len(recs))
+        check("capture: final record is the run summary",
+              recs[-1].get("record") == "run", recs[-1].get("record"))
+        check("capture: run summary status is complete",
+              recs[-1].get("status") == "complete", recs[-1])
 
-        header, bodies = recs[0], recs[1:]
+        header, bodies = recs[0], recs[1:-1]
         for field in ("record", "version", "format", "generated_at",
                       "model_file", "n_ctx", "sampling", "max_tokens",
                       "prompt_char_limit", "preview_chars", "prompt_count"):
@@ -386,13 +390,16 @@ def main():
         check("mid-run: exit code non-zero", code != 0, code)
         check("mid-run: partial file exists", os.path.isfile(ppath))
         prec = _read_jsonl(ppath)
-        check("mid-run: header plus 4 complete records (failed on the 5th)",
-              len(prec) == 5, len(prec))
+        check("mid-run: header, 4 complete records (failed on the 5th) and run summary",
+              len(prec) == 6, len(prec))
+        check("mid-run: run summary marks the run aborted",
+              prec[-1].get("record") == "run"
+              and prec[-1].get("status") == "aborted", prec[-1])
         check("mid-run: every surviving line is valid JSON with full response",
-              all("response" in r or r.get("record") == "header" for r in prec)
-              and all(len(r["response"]) == r["chars"] for r in prec[1:]))
-        check("mid-run: real repo tmp/ still absent",
-              not os.path.exists(real_repo_tmp))
+              all("response" in r or r.get("record") in ("header", "run") for r in prec)
+              and all(len(r["response"]) == r["chars"] for r in prec[1:-1]))
+        check("mid-run: real repo tmp/ holds no guard-created file",
+              not os.path.exists(os.path.join(real_repo_tmp, "midrun.jsonl")))
 
         # ------------------------------------------------ header write failure
         print("\n--- header write failure (L-2) "
@@ -438,6 +445,9 @@ def main():
             def flush(self):
                 return self._fh.flush()
 
+            def fileno(self):
+                return self._fh.fileno()
+
             def close(self):
                 self._fh.close()
                 raise OSError("simulated close failure")
@@ -463,8 +473,10 @@ def main():
         check("close-failure: dedicated finalize exit code (6)", code == 6, code)
         check("close-failure: file exists with the written data",
               os.path.isfile(cf_path))
-        check("close-failure: records fully written before close",
+        check("close-failure: header + prompt records survive close",
               len(_read_jsonl(cf_path)) == len(_PROMPTS) + 1)
+        check("close-failure: NO run summary written, so 'complete' cannot be claimed",
+              all(r.get("record") != "run" for r in _read_jsonl(cf_path)))
         check("close-failure: close error reported on stderr",
               "finalize" in cerr and "simulated close failure" in cerr, cerr[-200:])
         check("close-failure: success message suppressed",

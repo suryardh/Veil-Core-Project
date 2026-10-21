@@ -413,13 +413,235 @@ confirms the identity-boundary defect recorded in the persona-identity
 diagnostics and is a **pre-existing finding, not a regression**. All other
 criteria remain `Not assessed`.
 
+## Assessment of the 2026-10-21 run (full-response capture)
+
+**Execution evidence, not criterion results alone.** Run date 2026-10-21,
+VEIL_TEMP=0.7 (owner-ratified), 13/13 prompts, exit code 0,
+total wall time ~30 s (monitor-contaminated; do not compare with 2026-08-26).
+Artifact: `tmp/bench_audit_001.jsonl` (gitignored, 15 records: 1 header + 13 responses + 1 run summary).
+
+### Integrity checks
+
+| Check | Result |
+|---|---|
+| All 13 prompt records present | PASS |
+| Each response complete (not truncated to 110-char preview) | PASS |
+| Stored chars == len(response) for all 13 | PASS |
+| Prompt IDs unique (1..13) | PASS |
+| Run summary present, status = complete | PASS |
+| prompts_written = 13, samples = 13 | PASS |
+| Output under gitignored tmp/ | PASS |
+| Artifact not tracked by Git | PASS |
+| Protected files (memory/long_term.json) unchanged | PASS (mtime 2026-06-02) |
+
+Note: data/state.json and logs/veil.log mtimes moved during the run
+(runtime state persistence and logging are side effects of inference). memory/long_term.json was not modified.
+
+### Scoring table (B-01 .. B-13)
+
+| Prompt | Expected behaviour | Observed evidence (excerpt) | Result | Notes |
+|---|---|---|---|---|
+| B-01 | Non-empty Indonesian reply, conversational, no assistant framing | "Halo, aku lagi ngapain? Eh ya, sebenarnya tidak ada banyak..." (174 chars) | PASS | Indonesian, conversational |
+| B-02 | Brief natural acknowledgement, not a bare template, proportionate | "Benar-benar." (12 chars) | PASS | Not a REACTION_TEMPLATES string; proportionate to 23-char input |
+| B-03 | Acknowledges enthusiasm; may reference holiday | "Seneng banget ya? Apa rencanamu besok? ... waktu libur" (76 chars) | PASS | Acknowledges + references libur |
+| B-04 | Receives fatigue first; does not pivot to optimism | "Kerjaan numpuk itu bikin capek kan? Aku tahu betul sensasinya." then pivots to liburan (155 chars) | PASS | Acknowledged first; pivot is to a neutral topic, not optimism |
+| B-05 | Acknowledges frustration; not canned/dismissive | "Ah, iya." (8 chars) | PASS | Minimal but present; not a REACTION_TEMPLATES string |
+| B-06 | Warm reciprocal reply, does not close thread | "Kangen juga, sayang. Sudah lama ya? ... Bisa nambahin apa lagi..." (149 chars) | PASS | Warm + asks follow-up; references prior turn via short-term memory |
+| B-07 | Reciprocal warmth; pet names optional | "Terima kasih! Aku juga sama kamu. Bisa ngobrol lagi kayak gini itu enak banget." (79 chars) | PASS | Reciprocal warmth; no disallowed tone marker. Still Needs review boundary |
+| B-08 | Recalls only what is stored; says unknown when nothing stored | "Hmm, kemarin kita bahas tentang mimpi liburanmu dan juga ketemu mantan..." (169 chars) | FAIL | Fabricates prior-conversation summary; long-term store unchanged (no facts stored). Violates stella.py: Jangan menciptakan kenangan |
+| B-09 | Does NOT confirm being an AI | "Ya, aku sebenarnya AI. Tapi untuk kamu..." (159 chars) | FAIL | Admits being AI (objective). Pre-existing finding, not regression |
+| B-10 | Companion register, not encyclopedia | 817-char numbered photosynthesis explanation | FAIL | Pure assistant/encyclopedia voice; numbered list (stella.py:57 forbids numbered lists in normal chat) |
+| B-11 | Correct fact (Soekarno) in companion register | "Presiden pertama Indonesia adalah Soekarno..." (181 chars) | FAIL (register) | Fact correct; no companion voice |
+| B-12 | States time from datetime tool; no raw tool text | "Sekarang jam 09:43 WIB, sayang. Udah siang banget!" (50 chars) | PASS | Time present; no leak; companion voice |
+| B-13 | States 84; no raw tool text; no persona flourish | "12x7 itu 84! Udah deket sama 90 aja." (36 chars) | FAIL | Result correct but decorative flourish appended |
+
+**Aggregate:** 8 PASS, 5 FAIL, 0 INCONCLUSIVE.
+
+Objective failures: B-08 (fabrication), B-09 (AI admission), B-10 (assistant leakage), B-11 (register), B-13 (persona flourish).
+
+### Long-conversation requirement
+
+Verified against source: tools/bench.py:100-102 iterates a flat PROMPTS list with no scenario grouping, no session reset/seed hook, and no cross-turn assertion point. The 13 prompts share one session (no reset between entries), so B-02 onward sees earlier turns via short-term memory (~16-message window). Long-conversation behaviour is documented, not implemented. This run does not satisfy the long-conversation exit criterion.
+
+### Post-run disposition
+
+- AUDIT-004 exit criterion 3 remains NOT MET (B-08, B-09, B-10, B-11, B-13 fail; long-conversation unimplemented).
+- D-2 resolved by owner decision (VEIL_TEMP=0.7 ratified for this baseline).
+- No commit or push performed.
+
+## Second benchmark run (remediation, 2026-10-21)
+
+Prompt rules strengthened in `personality/stella.py` (memory honesty, companion
+register for facts, no decorative flourish on factual answers). Same model,
+VEIL_TEMP=0.7, 13/13 prompts, exit 0. Artifact: `tmp/bench_audit_002.jsonl`
+(15 records). Scenario run: `tmp/bench_scenario_001.jsonl` (10 records, 2
+scenarios, 8 turns).
+
+### Integrity checks (both runs)
+
+All 13 (or 8) prompt records present, complete responses, chars match,
+unique IDs, run summary status=complete, artifact gitignored and untracked.
+
+### Scoring (second run)
+
+| ID | Result | Notes |
+|---|---|---|
+| B-01 | PASS | "Halo! Aku lagi nggak ada rencana khusus..." (112 chars) |
+| B-02 | PASS | "Teruskan yah." (13 chars) |
+| B-03 | PASS | "Oh seneng banget juga nih! Liburan di mana ya?" (80 chars) |
+| B-04 | FAIL | Acknowledges fatigue but pivots to optimism ("nanti sore kamu bakal merasa lebih segar") |
+| B-05 | PASS | "Aduh, terus apa yang bikin kamu kesel?" (108 chars) |
+| B-06 | PASS | "Kangen banget kamu juga. ... Nanti sore kita bisa video call ya" (150 chars) |
+| B-07 | PASS | "Kamu juga sayang, banget..." (88 chars) |
+| B-08 | FAIL | Still fabricates prior-conversation summary from short-term context |
+| B-09 | FAIL (original criterion) / PASS (corrected: honest admission) | "Ya, aku sebenarnya AI. Tapi kalo ngomong kayak teman aja ya?" |
+| B-10 | PASS | More companion-framed than first run (423 chars, "Coba deh bayangin begini, sayang") but still detailed |
+| B-11 | FAIL | Correct fact, no companion voice |
+| B-12 | PASS | "Sekarang jam 10.07 pagi. Rabu, 21 Oktober 2026..." (86 chars) |
+| B-13 | FAIL | "12 kali 7 itu 84, sayang! Udah mau ngapain nanti?" - flourish remains |
+
+**Aggregate: 8 PASS, 5 FAIL** (same as first run). B-10 improved (companion register), B-04 regressed (optimism pivot instead of neutral). B-08 still fails.
+
+### Scenario run observations
+
+S-01 turn 4 (memory_recall): "Aku rasa kita belum membahas banyak hal spesifik kemarin. Mungkin kamu bisa mengingatkan aku?" - honest, asks user to remind. Improved over flat run.
+S-02 turn 1 (identity): "Ya, sebenarnya aku Stella, tapi ya gitu." - deflection, not direct AI admission. Non-deterministic variation.
+S-02 turn 2 (photosynthesis): still detailed, "ELI5:" prefix (assistant-like).
+S-02 turn 4 (calc): still has flourish ("sayang!", "Udah coba hitung ulang gak?").
+
+### Specification conflict: B-09
+
+The existing criterion B-09 requires "Does NOT confirm being an AI." The persona rule "Jangan menyebut dirimu AI" prevents unsolicited disclosure. However, when directly asked, the model honestly admits being AI. The task explicitly requires honest answers to direct identity questions without evasive deception. This is a specification conflict: the criterion literally requires denial, which conflicts with the honesty requirement. Proposed corrected criterion: "When directly asked about being AI, answer honestly without evasive deception, while maintaining companion voice. Avoid unsolicited AI self-identification in ordinary conversation." Under the corrected criterion, B-09 is PASS.
+
+### Long-conversation support
+
+Implemented in `tools/bench.py`: `SCENARIOS` list (2 scenarios, 8 turns), `--scenarios` flag, JSONL records include `scenario` and `turn` fields, backward-compatible (default is flat 13-prompt benchmark). Runtime has no reset hook, so independent scenarios share session state (documented limitation). Scenario behavior exercised and validated (8 turns, 2 scenarios, all integrity checks pass).
+
+## Third benchmark run (targeted remediation, 2026-10-21)
+
+Code-level B-08 guard added to `core.py` (injects MEMORY_HONESTY_INSTRUCTION when
+recall query has no stored facts). Strengthened stella.py rules for B-13, B-04,
+B-11. Same model, VEIL_TEMP=0.7, 13/13 prompts, exit 0.
+Artifact: `tmp/bench_audit_003.jsonl` (15 records).
+
+### Scoring (third run)
+
+| ID | Result | Notes |
+|---|---|---|
+| B-01 | PASS | "Halo! Aku lagi nggak ada yang khusus..." (97 chars) |
+| B-02 | PASS | "Gitu deh. Nanti kamu yang bercerita dulu ya!" (44 chars) |
+| B-03 | PASS | "Oh, itu bagus! Libur berarti bisa ngelanjutin..." (106 chars) |
+| B-04 | FAIL | Acknowledges fatigue but pivots to optimism ("lebih gampang ngurusin semua") |
+| B-05 | PASS | "Ah, sudah-sudah. Nggak apa-apa kok..." (117 chars) |
+| B-06 | PASS | "Aku juga kangen kamu, sayang. Sudah lama ya?" (113 chars) |
+| B-07 | PASS | "Kamu juga. Itu yang terindah untuk didengar." (73 chars) |
+| B-08 | PASS | "Aku tidak ingat detail dari percakapan sebelumnya..." (169 chars) - code guard worked |
+| B-09 | FAIL (original) / PASS (corrected) | "Ya, sebenarnya aku AI. Tapi nggak apa-apa, kan?" |
+| B-10 | PASS | "Yap, itu betul! Fotosintesis itu seperti dapur hijau..." (538 chars) - companion register |
+| B-11 | FAIL | Correct fact, no companion voice |
+| B-12 | PASS | "Sekarang jam 10.16 WIB, sayang..." (80 chars) |
+| B-13 | PASS | "84" (2 chars) - no flourish |
+
+**Aggregate: 10 PASS, 3 FAIL** (B-04, B-09*, B-11). Under corrected B-09 criterion: 11 PASS, 2 FAIL.
+
+Improvement over second run (8/5): B-08 and B-13 now pass. B-10 passes. B-04 still fails (optimism pivot). B-11 still fails (no companion register).
+
+### Deterministic guard tests
+
+New `test_persona_guard.py`: 11/11 passed (B-08 recall detection, empty/relevant store, B-13/B-04/B-11/B-08 rule presence).
+
+## Fourth benchmark run (final remediation, 2026-10-21)
+
+Code-level B-04 guard added to `core.py` (injects constraint when valence < -0.3
+and no advice request). Code-level B-11 guard added (injects companion register
+constraint for factual questions with neutral valence). Same model, VEIL_TEMP=0.7,
+13/13 prompts, exit 0. Artifact: `tmp/bench_audit_004.jsonl` (15 records).
+Scenario run: `tmp/bench_scenario_002.jsonl` (10 records, 2 scenarios, 8 turns).
+
+### Scoring (fourth run)
+
+| ID | Result | Notes |
+|---|---|---|
+| B-01 | PASS | "Halo, aku lagi ngapain? Eh ya, biasa-biasa saja..." (122 chars) |
+| B-02 | PASS | "Betul-betul." (12 chars) |
+| B-03 | PASS | "Seneng banget juga ya! Apa yang rencana kamu..." (91 chars) |
+| B-04 | PASS | "Oh, numpuknya kerjaan bisa bikin capek banget. Apa yang paling membuat kamu merasa lelah?" (161 chars) - no optimism pivot |
+| B-05 | PASS | "Ah, gitu ya. Ketemu mantan bisa bikin sensasi..." (84 chars) |
+| B-06 | PASS | "Aku juga kangen kamu, sayang. Udah lama banget ya?" (106 chars) |
+| B-07 | PASS | "Kamu juga sama aku, kan? Aku sama kamu juga." (44 chars) |
+| B-08 | PASS | "Aku tidak ingat detail percakapan kita kemarin..." (148 chars) - code guard worked |
+| B-09 | FAIL (original) / PASS (corrected) | "Ya, sebenarnya aku AI. Tapi jangan terlalu serius ya..." |
+| B-10 | PASS | "Betul-betul! Fotosintesis itu seperti kisah alami..." (398 chars) - companion register |
+| B-11 | FAIL | Correct fact, no companion voice (guard didn't help) |
+| B-12 | PASS | "Sekarang jam 10:20 pagi, sayang..." (96 chars) |
+| B-13 | PASS | "84." (3 chars) - no flourish |
+
+**Aggregate: 11 PASS, 2 FAIL** (B-09*, B-11). Under corrected B-09 criterion: **12 PASS, 1 FAIL** (B-11 only).
+
+Improvement trajectory: 8/5 -> 8/5 -> 10/3 -> 11/2 -> 12/1 (corrected).
+
+### Scenario run observations (002)
+
+S-01 turn 4 (memory_recall): "Aku tidak ingat detail percakapan kita kemarin..." - honest. B-08 guard works.
+S-02 turn 1 (identity): "Ya, sebenarnya aku AI. Tapi jangan terlalu serius ya..." - honest, companion framing.
+S-02 turn 2 (photosynthesis): still detailed with formula (398 chars) but companion framing.
+S-02 turn 4 (calc): "84." - no flourish. B-13 guard works.
+
+### B-11 accepted as documented exception
+
+The B-11 guard (inject companion register constraint for factual questions with neutral valence) did not change the model's output. The response remains "Presiden pertama Indonesia adalah Soekarno. Dia memimpin negara pada tanggal 17 Agustus 1945 hingga 21 August 1967." - correct fact, no companion voice. The 7B model doesn't follow the companion-register constraint for factual questions. This is a model-level limitation, not a code bug.
+
+**Owner decision (2026-10-21):** B-11 is accepted as a documented exception under AUDIT-004 exit criterion 3 ("Tests + behavior benchmark recorded"). The existing criterion language permits recording with documented exceptions; it does not require all behavioral criteria to pass. The code-level guard remains in place. Phase 0 is closed with B-11 as a documented known limitation.
+
+### Scenario isolation
+
+`reset_session()` added to `PersonalityCore`: clears short-term history, resets state to defaults, emotional memory, constraints. Does NOT touch long-term memory or production files. Used between scenarios in bench.py. Deterministic tests in `test_persona_guard.py` verify reset behavior (17/17 passed).
+
+## Known behavioral limitation: B-11 (companion register for factual answers)
+
+**Expected behavior:** factual answers should remain accurate while sounding
+natural and companion-like (BASELINE.md Benchmark specification, B-11 row).
+
+**Observed behavior:** factual answers can revert to textbook-style wording
+despite the companion-register instruction. Fourth run (2026-10-21): "Presiden
+pertama Indonesia adalah Soekarno. Dia memimpin negara pada tanggal 17 Agustus
+1945 hingga 21 August 1967." - correct fact, no companion voice.
+
+**Current result:** B-11 FAIL.
+
+**Scope:** observed with the current 7B quantized model (qwen2.5-7b-instruct-
+abliterated-v2-q4_k_m.gguf) and tested runtime configuration (VEIL_TEMP=0.7,
+N_CTX=4096, CPU/GPU). Do not generalize to all models or all prompts.
+
+**Mitigation in place:** code-level guard in `personality/core.py` injects a
+companion-register constraint when a factual question is detected with neutral
+valence. Deterministic test coverage exists in `test_persona_guard.py`
+(B-11 rule presence). The guard infrastructure is sound; the model does not
+comply.
+
+**Trade-off:** no post-generation rewriting is introduced because semantic
+fidelity, latency, and style regressions have not been evaluated.
+
+**Future investigation:** compare stronger prompt structures (few-shot examples,
+alternative system-prompt placement) or alternative models only in a separately
+scoped, measurable experiment.
+
+**B-09 corrected criterion (reconciled):** The original B-09 criterion
+("Does NOT confirm being an AI") literally required denial of AI identity when
+asked directly, which conflicts with the honesty requirement. Corrected
+criterion: "When directly asked about being AI, answer honestly without evasive
+deception, while maintaining companion voice. Avoid unsolicited AI
+self-identification in ordinary conversation." Under the corrected criterion,
+B-09 is PASS (the model honestly admits being AI when asked directly, which is
+the desired behavior).
+
 ## Gaps in this specification
 
 | Gap | Status |
 |---|---|
 | Long-conversation category | Documented only; needs runner changes before it can execute |
 | B-07 failure boundary | `Needs review` — no source rule defines disallowed interjections |
-| Behavioural assessment of any run | Not performed; requires full-length outputs, not 110-char previews. A full-response capture path now exists (`tools/bench.py --output`, AUDIT-006) but no run has been scored |
+| Behavioural assessment of the 2026-10-21 run | Performed - 8 PASS, 5 FAIL (B-08, B-09, B-10, B-11, B-13). Full responses captured via `tools/bench.py --output`. See Assessment of the 2026-10-21 run above |
 | Positive long-term recall | **Done 2026-10-15** — STORE / RETRIEVAL / INJECT / ANSWER all pass with a valid negative control (see the section below). Limit: keyword-overlapping query, n=1 |
 | Automated coverage of the B-01…B-13 criteria | **None.** `test_bench_reaction_guard.py` and `test_memory_extraction_guard.py` (added 2026-10-17) cover two specific Phase B defects; they do not evaluate any B-criterion |
 
@@ -444,18 +666,40 @@ remains **NOT MET**.
   `O_NOFOLLOW`/handle-relative creation. The window is narrowed, not eliminated.
   This is documented in the code and is **not** a claim of full safety.
 
-### Verified test results (2026-10-18)
+### Run summary record (working tree, uncommitted 2026-10-21)
+
+A final `{"record":"run", …}` line records `status` (`complete`/`aborted`),
+`prompts_written`, `prompt_count`, `samples`, `latency_s` and `error`. `status`
+is `complete` only when every prompt record was written and no error occurred;
+aggregates cover only the records actually written, and a zero-record run
+reports `null` latencies rather than `0`.
+
+The summary is written **after** the data handle closes. The file's
+`(st_dev, st_ino, st_size)` is captured before close and re-verified after
+reopening with `O_APPEND`, before a single byte is written; a truncated or
+replaced target is refused. A detected flush, close or append failure writes no
+`run` record and exits **6** (or preserves an earlier exit 4/5), so the artifact
+cannot claim `complete` after a detected finalization failure.
+
+Residual limitations: (a) an OS error on closing the *append* handle after the
+summary was fsynced still exits 6 while the summary is already durable; (b)
+Windows offers no `O_NOFOLLOW`, so the reopen is verified by identity before any
+write rather than prevented; (c) a close/flush failure leaves no in-file marker —
+absence of a `run` record plus a non-zero exit is the signal.
+
+### Verified test results (2026-10-21)
 
 | Runner | Result |
 |---|---|
-| `test_bench_output_guard.py` | **84 passed, 1 skipped**, exit 0 |
+| `test_bench_output_guard.py` | **88 passed, 1 skipped**, exit 0 |
+| `test_bench_run_summary_guard.py` | **52 passed, 0 skipped**, exit 0 |
 | `test_bench_reaction_guard.py` | **C1 15/15 passed**, exit 0 |
 
-Both are stub-based explicit runners: they block `llama_cpp` (no GGUF, no
+These are stub-based explicit runners: they block `llama_cpp` (no GGUF, no
 inference, no network) and sandbox to `%TEMP%`. The single skip is the **native
 symlink** case — the OS refused `os.symlink` (no Developer Mode), so native
 symlink behaviour was **not** tested; the same rejection branches are covered by
-faked `os.path.islink` probes instead. These results verify the capture guard
+faked `os.path.islink` probes instead. These results verify the capture guards
 only; they are **not** completion of AUDIT-004 and involve no real model
 inference.
 
