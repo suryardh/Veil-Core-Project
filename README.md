@@ -28,10 +28,10 @@ beyond an agent with personality
 > cross-turn behavioral acceptance is tracked as a separate follow-up.
 >
 > The AUDIT-006 full-response capture (`tools/bench.py --output`) is
-> implemented and committed locally (not pushed). Run summary integrity
-> change is uncommitted.
+> implemented, committed, and pushed. Run summary integrity
+> change is committed.
 >
-> Implemented ≠ verified. The deterministic test suite passes **141**
+> Implemented ≠ verified. The deterministic test suite passes **144**
 > assertions (`test_agent.py`); bench guard runners (88 + 52 + 15 + 33 + 17
 > = 205) are counted separately below. The 3 LLM-dependent end-to-end
 > assertions have not been run in the audit.
