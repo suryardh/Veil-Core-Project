@@ -8,7 +8,7 @@ except ImportError:
 
 # --- Model Configuration ---
 # Active: huihui-ai/Qwen2.5-7B-Instruct-abliterated-v2 (uncensored, mradermacher i1-Q4_K_M quant)
-# Rollback: models/qwen2.5-3b-instruct-q4_k_m.gguf (pre-migration baseline, see BASELINE.md)
+# Rollback: models/qwen2.5-3b-instruct-q4_k_m.gguf (pre-migration baseline, see docs/BASELINE.md)
 MODEL_PATH = os.path.join("models", "qwen2.5-7b-instruct-abliterated-v2-q4_k_m.gguf")
 N_CTX = 4096
 N_THREADS = max(1, (os.cpu_count() or 4) // 2)

@@ -14,7 +14,7 @@ beyond an agent with personality
 # Project Status
 
 > **Current phase: Phase 0 — Repository Audit (COMPLETE).** All seven exit
-> criteria are MET. See `PLAN.md` for exit criteria and `BASELINE.md` for
+> criteria are MET. See `docs/PLAN.md` for exit criteria and `docs/BASELINE.md` for
 > what is measured vs. historical.
 >
 > **AUDIT-004 criterion 3 is MET.** Four 13-prompt benchmark runs were
@@ -66,7 +66,7 @@ beyond an agent with personality
 
 - **Short-term memory** — recent conversation with 8-message / chat-template budget, ignore/truncate rules
 - **Long-term memory** — persistent JSON (up to 500 facts), relevance-scored injection (top 10), dedup, keyword-importance extraction
-- **Fact extraction** — `memory/extractor.py` turns *explicit* seeds ("inget ya, ulang tahun aku bulan depan") into importance-weighted facts. Since 2026-10-15 a `ya`/`bahwa`/`kalau` particle is required, so a recall question such as "inget ga kemarin kita bahas apa?" is no longer misread as a save command. A bare imperative without the particle is currently not captured — tracked as `PLAN.md` D-12
+- **Fact extraction** — `memory/extractor.py` turns *explicit* seeds ("inget ya, ulang tahun aku bulan depan") into importance-weighted facts. Since 2026-10-15 a `ya`/`bahwa`/`kalau` particle is required, so a recall question such as "inget ga kemarin kita bahas apa?" is no longer misread as a save command. A bare imperative without the particle is currently not captured — tracked as `docs/PLAN.md` D-12
 - **Emotional memory** — valence/arousal records with recurrence merging and salience filtering
 
 ## Tool System
@@ -184,11 +184,11 @@ Veil/
 ├── personality/
 │   ├── core.py                 ← coordinator: analyze → state → memory → tools → prompt → generate
 │   │                             (owns emotion, conflict, inactivity, memory, tool routing,
-│   │                              prompting and state persistence — see AGENT.md §Discrepancies)
+│   │                              prompting and state persistence — see docs/AGENT.md §Discrepancies)
 │   ├── state.py                ← StellaIdentity + StellaState (5-dim, decay)
 │   ├── analyzer.py             ← keyword → EmotionAnalysis
 │   ├── prompting.py            ← state → natural language descriptor
-│   ├── stella.py               ← identity constants (base, rules, safety) — hardcoded, see AGENT.md
+│   ├── stella.py               ← identity constants (base, rules, safety) — hardcoded, see docs/AGENT.md
 │   ├── rules.py                ← centralized personality rules (v3.1)
 │   ├── conflict.py             ← insult detection, cooling, recovery, drift
 │   ├── persistence.py          ← save/load state.json (schema v3)
@@ -216,7 +216,7 @@ Veil/
 │
 ├── requirements.txt
 ├── README.md
-└── AGENT.md
+└── docs/AGENT.md
 ```
 
 ---
@@ -267,7 +267,7 @@ to register the CUDA bin directories.
 # Model Setup
 
 Active model: **Qwen2.5-7B-Instruct-abliterated-v2 Q4_K_M GGUF**
-(Rollback baseline: `qwen2.5-3b-instruct-q4_k_m.gguf`, see `BASELINE.md`.)
+(Rollback baseline: `qwen2.5-3b-instruct-q4_k_m.gguf`, see `docs/BASELINE.md`.)
 
 Place inside `models/`:
 ```
@@ -393,7 +393,7 @@ automatically.
 # Testing
 
 ```bash
-python test_agent.py
+python tests/test_agent.py
 ```
 
 **Verified 2026-10-15: 141 deterministic assertions pass.** The count rose from
@@ -422,8 +422,8 @@ Both are **explicit runners**, not pytest modules — they define no `test_*`
 functions and must be invoked directly:
 
 ```bash
-python test_bench_reaction_guard.py     # 15 assertions, exit 0
-python test_memory_extraction_guard.py  # 33 assertions, exit 0
+python tests/test_bench_reaction_guard.py     # 15 assertions, exit 0
+python tests/test_memory_extraction_guard.py  # 33 assertions, exit 0
 ```
 
 Each `chdir`s into a fresh `%TEMP%` sandbox before importing, so relative paths in
@@ -435,13 +435,13 @@ environment and `--collect-only` has not been run** — import safety was
 verified by importing the modules directly, and the 15/15 and 33/33 results come
 from manual invocation.
 
-A third Phase 0 runner, `test_bench_output_guard.py`, guards the AUDIT-006
+A third Phase 0 runner, `tests/test_bench_output_guard.py`, guards the AUDIT-006
 `--output` JSONL capture added to `tools/bench.py` — **88 assertions pass, 1
 skipped** (the OS refused native symlink creation, so that branch is covered with
-faked `os.path.islink` probes instead). A fourth, `test_bench_run_summary_guard.py`,
+faked `os.path.islink` probes instead). A fourth, `tests/test_bench_run_summary_guard.py`,
 pins the `run` summary record and the close-then-append integrity rule —
 **52 assertions pass**: a detected flush, close or append failure writes no `run`
-record and exits 6. A fifth, `test_persona_guard.py`, covers the B-08 memory-
+record and exits 6. A fifth, `tests/test_persona_guard.py`, covers the B-08 memory-
 honesty guard, B-04/B-11/B-13 style rules, and `reset_session()` — **17
 assertions pass**. All five are explicit runners, block `llama_cpp`, sandbox to
 `%TEMP%`, run no inference, and do not evaluate any B-01…B-13 criterion.
@@ -449,7 +449,7 @@ assertions pass**. All five are explicit runners, block `llama_cpp`, sandbox to
 `tools/bench.py` (13 fixed prompts, baseline comparison) requires the GGUF. It
 **was executed against the current 7B model on 2026-10-15** — 13/13 prompts,
 exit code 0 — from an isolated sandbox with production state, memory and logs
-untouched. Its latency is monitor-contaminated; see `BASELINE.md` before using
+untouched. Its latency is monitor-contaminated; see `docs/BASELINE.md` before using
 the numbers.
 
 ---
