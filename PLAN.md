@@ -73,51 +73,51 @@ This phase does **not** cancel the existing roadmap. It validates its assumption
 
 ## AUDIT-001 — Capture the Current Baseline
 
-- [ ] Record repository status, current branch, and uncommitted changes.
-- [ ] Identify the actual Python/runtime environment and supported target environment.
-- [ ] Record model file, model variant, quantization, context length, and generation settings.
-- [ ] Verify which model the runtime actually loads; reconcile discrepancies between code, config, and documentation.
-- [ ] Record inference backend and available CPU/GPU acceleration.
-- [ ] Run existing tests and record failures without silently fixing unrelated issues.
-- [ ] Run the existing smoke test, if available.
-- [ ] Record latency, memory use, and representative conversation behavior where practical.
-- [ ] Compare the observed setup with `BASELINE.md` and document stale or conflicting claims.
+- [x] Record repository status, current branch, and uncommitted changes.
+- [x] Identify the actual Python/runtime environment and supported target environment.
+- [x] Record model file, model variant, quantization, context length, and generation settings.
+- [x] Verify which model the runtime actually loads; reconcile discrepancies between code, config, and documentation.
+- [x] Record inference backend and available CPU/GPU acceleration.
+- [x] Run existing tests and record failures without silently fixing unrelated issues.
+- [x] Run the existing smoke test, if available.
+- [x] Record latency, memory use, and representative conversation behavior where practical.
+- [x] Compare the observed setup with `BASELINE.md` and document stale or conflicting claims.
 
 **Output:** a dated baseline note with environment, model/config, test results, known limitations, and measurements.
 
 ## AUDIT-002 — Trace the Current Request Lifecycle
 
-- [ ] Trace the actual entry point into the runtime.
-- [ ] Follow a user message through prompt/context construction and the LLM call.
-- [ ] Identify where character identity and instructions are defined.
-- [ ] Identify where dynamic state and relationship variables are read and updated.
-- [ ] Identify how short-term history is assembled and truncated.
-- [ ] Identify how long-term memories are stored, selected, and injected.
-- [ ] Identify tools, evaluators, post-processing, and output handling.
-- [ ] Record important implicit assumptions, including single-user/session assumptions.
-- [ ] Draw an as-is flow diagram from the code, not from intended architecture.
+- [x] Trace the actual entry point into the runtime.
+- [x] Follow a user message through prompt/context construction and the LLM call.
+- [x] Identify where character identity and instructions are defined.
+- [x] Identify where dynamic state and relationship variables are read and updated.
+- [x] Identify how short-term history is assembled and truncated.
+- [x] Identify how long-term memories are stored, selected, and injected.
+- [x] Identify tools, evaluators, post-processing, and output handling.
+- [x] Record important implicit assumptions, including single-user/session assumptions.
+- [x] Draw an as-is flow diagram from the code, not from intended architecture.
 
 **Output:** a short request-lifecycle diagram and a list of responsibilities, dependencies, and observed coupling.
 
 ## AUDIT-003 — Protect Persistent Data
 
-- [ ] Locate all persistent state and memory files.
-- [ ] Document current schemas and version fields.
-- [ ] Create a backup/export of relevant persistent data before any potentially destructive test.
-- [ ] Verify that a backup can be restored to a temporary location.
-- [ ] Inspect migration behavior and determine whether failures preserve the original source.
-- [ ] Identify unsafe direct-write paths and missing validation.
-- [ ] Do not perform experimental migrations on the only copy of real data.
+- [x] Locate all persistent state and memory files.
+- [x] Document current schemas and version fields.
+- [x] Create a backup/export of relevant persistent data before any potentially destructive test.
+- [x] Verify that a backup can be restored to a temporary location.
+- [x] Inspect migration behavior and determine whether failures preserve the original source.
+- [x] Identify unsafe direct-write paths and missing validation.
+- [x] Do not perform experimental migrations on the only copy of real data.
 
 **Output:** a data inventory, verified backup/restore procedure, and list of persistence risks.
 
 ## AUDIT-004 — Establish a Regression Baseline
 
-- [ ] Collect a small set of representative prompts and expected behavior.
-- [ ] Include Indonesian naturalness, character adherence, emotional context, memory, long conversations, and assistant-style leakage.
-- [ ] Record current outputs before changing prompts, model, state logic, or retrieval.
-- [ ] Separate reproducible failures from subjective impressions.
-- [ ] Keep test inputs free of secrets and unnecessary personal data.
+- [x] Collect a small set of representative prompts and expected behavior.
+- [x] Include Indonesian naturalness, character adherence, emotional context, memory, long conversations, and assistant-style leakage.
+- [x] Record current outputs before changing prompts, model, state logic, or retrieval.
+- [x] Separate reproducible failures from subjective impressions.
+- [x] Keep test inputs free of secrets and unnecessary personal data.
 
 **Output:** a small repeatable benchmark and a log of current failures.
 
@@ -132,26 +132,26 @@ For each important module, choose one disposition:
 
 Review at minimum:
 
-- [ ] Bootstrap and configuration.
-- [ ] LLM engine/model loading.
-- [ ] Character identity and prompt construction.
-- [ ] Emotional state and relationship logic.
-- [ ] Short-term conversation history.
-- [ ] Long-term memory storage and retrieval.
-- [ ] Persistence and migrations.
-- [ ] Tests, benchmark scripts, and documentation.
-- [ ] Platform-specific code and assumptions.
+- [x] Bootstrap and configuration.
+- [x] LLM engine/model loading.
+- [x] Character identity and prompt construction.
+- [x] Emotional state and relationship logic.
+- [x] Short-term conversation history.
+- [x] Long-term memory storage and retrieval.
+- [x] Persistence and migrations.
+- [x] Tests, benchmark scripts, and documentation.
+- [x] Platform-specific code and assumptions.
 
 **Output:** a module disposition table with evidence, risk, and suggested next action for each major area.
 
 ## AUDIT-006 — Decide the Migration Path
 
-- [ ] Compare the existing implementation with the proposed boundaries in `DESIGN.md`.
-- [ ] Identify which roadmap assumptions remain valid.
-- [ ] Decide whether the next step is incremental improvement, targeted replacement, or a larger refactor.
+- [x] Compare the existing implementation with the proposed boundaries in `DESIGN.md`.
+- [x] Identify which roadmap assumptions remain valid.
+- [x] Decide whether the next step is incremental improvement, targeted replacement, or a larger refactor.
 - [x] Define the smallest safe next change. — see [AUDIT-006 decision record](#audit-006--smallest-safe-next-change-decided-2026-10-15)
 - [x] Record rollback steps and data-protection requirements. — see [AUDIT-006 decision record](#audit-006--smallest-safe-next-change-decided-2026-10-15) §Rollback plan
-- [ ] Update this plan only where audit evidence justifies a change.
+- [x] Update this plan only where audit evidence justifies a change.
 
 **Output:** a short decision record explaining what will change, what will remain, why, and how to roll back.
 
@@ -166,13 +166,13 @@ Review at minimum:
 
 Phase 0 is complete when:
 
-- [ ] The actual model/runtime configuration is verified.
+- [x] The actual model/runtime configuration is verified.
 - [x] A current request-lifecycle diagram exists.
-- [ ] Existing tests and a small behavior benchmark have recorded results.
+- [x] Existing tests and a small behavior benchmark have recorded results.
 - [x] Persistent state and memory have a verified backup/restore path.
 - [x] Major modules have KEEP / REFACTOR / REPLACE / DEFER dispositions.
 - [x] Conflicts between code, config, `BASELINE.md`, `AGENT.md`, and other docs are recorded.
-- [ ] The next implementation step is supported by evidence and has a rollback path.
+- [x] The next implementation step is supported by evidence and has a rollback path.
 
 **Until these criteria are met, do not start a model migration or broad architecture rewrite.** Small, non-destructive fixes needed to run the audit are allowed and should be documented.
 
@@ -1087,7 +1087,7 @@ These are intentionally not current priorities.
 
 The current roadmap is considered healthy when:
 
-- [ ] Phase 0 audit exit criteria are satisfied.
+- [x] Phase 0 audit exit criteria are satisfied.
 - [ ] A 7B model has been evaluated against the current 3B baseline.
 - [ ] Context budgeting is measured rather than inherited blindly.
 - [ ] `state.json` has a reliable backup/export path.
