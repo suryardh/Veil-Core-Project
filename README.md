@@ -158,10 +158,21 @@ Veil/
 ├── app.py                          ← CLI entry point
 ├── app_tui.py                      ← TUI entry point (rich, split-panel)
 ├── config.py                       ← all tunables + .env
-├── test_agent.py                   ← 141 deterministic assertions + 3 LLM-dependent
-├── test_bench_reaction_guard.py    ← reaction-guard regressions (C1, 15 assertions)
-├── test_memory_extraction_guard.py ← memory-extraction regressions (C2, 33 assertions)
-│
+├── requirements.txt
+├── README.md
+├── docs/
+│   ├── AGENT.md                    ← engineering source of truth
+│   ├── BASELINE.md                 ← benchmark specification + measurements
+│   ├── PLAN.md                     ← roadmap + discrepancy register + change log
+│   ├── DESIGN.md                   ← architecture design notes
+│   └── CANDIDATES.md               ← model candidates
+├── tests/
+│   ├── test_agent.py               ← 144 deterministic assertions + 3 LLM-dependent
+│   ├── test_bench_output_guard.py  ← AUDIT-006 capture guard (88 + 1 skip)
+│   ├── test_bench_reaction_guard.py ← reaction-guard regressions (C1, 15)
+│   ├── test_bench_run_summary_guard.py ← run summary integrity (52)
+│   ├── test_memory_extraction_guard.py ← memory extraction regressions (C2, 33)
+│   └── test_persona_guard.py       ← persona guards + reset_session (17)
 ├── core/
 │   ├── bootstrap.py            ← App startup consolidation
 │   ├── cognition.py            ← invisible search→extract→summarize
@@ -170,36 +181,30 @@ Veil/
 │   ├── constraints.py          ← hard reply requirements with TTL expiry
 │   ├── formatter.py            ← tool-result formatting (text/json)
 │   └── agent.py                ← LLM wrapper + history
-│
 ├── llm/
 │   └── engine.py               ← llama.cpp wrapper + sanitize
-│
 ├── memory/
 │   ├── emotional.py            ← valence/arousal records, salience filter
 │   ├── extractor.py            ← keyword importance scoring + seed pairs
 │   ├── short_term.py           ← 8-msg budget, chat-template format
 │   ├── long_term.py            ← JSON, 500-fact cap, relevance injection
 │   └── store.py                ← atomic persistence
-│
 ├── personality/
 │   ├── core.py                 ← coordinator: analyze → state → memory → tools → prompt → generate
-│   │                             (owns emotion, conflict, inactivity, memory, tool routing,
-│   │                              prompting and state persistence — see docs/AGENT.md §Discrepancies)
 │   ├── state.py                ← StellaIdentity + StellaState (5-dim, decay)
 │   ├── analyzer.py             ← keyword → EmotionAnalysis
 │   ├── prompting.py            ← state → natural language descriptor
-│   ├── stella.py               ← identity constants (base, rules, safety) — hardcoded, see docs/AGENT.md
+│   ├── stella.py               ← identity constants (base, rules, safety)
 │   ├── rules.py                ← centralized personality rules (v3.1)
 │   ├── conflict.py             ← insult detection, cooling, recovery, drift
 │   ├── persistence.py          ← save/load state.json (schema v3)
 │   ├── inactivity.py           ← absence detection + relationship deltas
 │   ├── initiative.py           ← probabilistic openers on user return
 │   └── rhythm.py               ← priority matrix + mode modulation + reactions
-│
 ├── tools/
 │   ├── base.py                 ← BaseTool + ToolResult + ToolContext
 │   ├── state_backup.py         ← manual backup/restore data/state.json
-│   ├── bench.py                ← fixed-prompt benchmark (baseline comparison) — requires the GGUF
+│   ├── bench.py                ← fixed-prompt benchmark (13 prompts + scenarios)
 │   ├── ctx_report.py           ← context budget measurement (tokenizer-based)
 │   ├── daily_eval.py           ← scheduled 7-day eval (probes + sim + metrics)
 │   ├── sim_live.py             ← manual opponent banter (OpenAI-compatible)
@@ -208,16 +213,17 @@ Veil/
 │   └── system/
 │       ├── calculator.py       ← safe eval
 │       └── datetime.py         ← WIB locale
-│
 ├── utils/
 │   ├── logger.py               ← structured logging
 │   ├── async_utils.py          ← with_retry (used by search)
-│   └── text.py                 ← LLM output sanitization (unicode, orphan punct, pet-name damper)
-│
-├── requirements.txt
-├── README.md
-└── docs/AGENT.md
+│   └── text.py                 ← LLM output sanitization
+├── data/                       ← runtime state (gitignored)
+├── memory/                     ← runtime memory (gitignored, *.json)
+├── logs/                       ← runtime logs (gitignored)
+├── models/                     ← GGUF models (gitignored)
+└── tmp/                        ← benchmark output (gitignored)
 ```
+
 
 ---
 
